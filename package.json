@@ -1,0 +1,73 @@
+{
+  "name": "accademia-admin-desktop",
+  "version": "1.6.0",
+  "description": "AccademIA Admin Desktop",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder --win nsis portable",
+    "dist:win": "electron-builder --win nsis",
+    "dist:portable": "electron-builder --win portable"
+  },
+  "keywords": [
+    "accademia",
+    "admin",
+    "desktop",
+    "electron"
+  ],
+  "author": "Rob Pac",
+  "license": "ISC",
+  "devDependencies": {
+    "electron": "^41.1.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.robpac.accademiaadmindesktop",
+    "productName": "AccademIA Admin Desktop",
+    "artifactName": "AccademIA-Admin-Desktop-${version}-${arch}.${ext}",
+    "asar": true,
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**/*",
+      "build/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "AccademIA Admin Desktop",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico"
+    }
+  },
+  "dependencies": {
+    "docx": "^9.5.1"
+  }
+}

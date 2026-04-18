@@ -1,0 +1,486 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AccademIA Admin Desktop</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-logo-wrap">
+            <img class="brand-logo" src="./assets/accademia-logo.png" alt="AccademIA" />
+          </div>
+          <div class="brand-subtitle brand-subtitle-desktop">Admin Desktop</div>
+        </div>
+
+        <nav class="nav">
+          <button class="nav-item active" data-view="dashboard">Dashboard</button>
+          <button class="nav-item" data-view="theses">Gestione Tesi</button>
+          <button class="nav-item" data-view="workspace">Workspace</button>
+          <button class="nav-item" data-view="events">Eventi e Diagnostica</button>
+          <button class="nav-item" data-view="providers">Provider e Prompt</button>
+          <button class="nav-item" data-view="tools">Strumenti Admin</button>
+        </nav>
+      </aside>
+
+      <main class="content">
+        <header class="topbar">
+          <div>
+            <h1 id="view-title">Dashboard</h1>
+            <p id="view-subtitle">Desktop admin separata dall'app utenti, con gestione e generazione tesi complete.</p>
+          </div>
+          <div class="topbar-right">
+            <div class="topbar-badge" id="workspace-save-state" data-mode="saved">Pronto</div>
+            <div class="topbar-badge" id="app-info"></div>
+          </div>
+        </header>
+
+        <section id="view-dashboard" class="view active-view">
+          <div class="cards-grid dashboard-metrics">
+            <article class="card metric-card">
+              <span class="card-label">Tesi admin</span>
+              <strong class="metric-value" id="metric-theses-total">0</strong>
+              <p>Archivio locale della desktop admin, con creazione illimitata.</p>
+            </article>
+            <article class="card metric-card">
+              <span class="card-label">Tesi attive</span>
+              <strong class="metric-value" id="metric-theses-active">0</strong>
+              <p>Progetti non archiviati pronti per workspace, generazione ed export.</p>
+            </article>
+            <article class="card metric-card">
+              <span class="card-label">Eventi registrati</span>
+              <strong class="metric-value" id="metric-events-total">0</strong>
+              <p>Storico operativo locale della desktop admin.</p>
+            </article>
+            <article class="card metric-card">
+              <span class="card-label">Criticità</span>
+              <strong class="metric-value" id="metric-events-critical">0</strong>
+              <p>Errori e avvisi recenti che meritano controllo.</p>
+            </article>
+          </div>
+
+          <div class="workspace-grid dashboard-grid">
+            <article class="card">
+              <h2>Azioni rapide</h2>
+              <div class="plain-list">
+                <button class="ghost-btn quick-action" data-quick-action="go-create">Vai a nuova tesi admin</button>
+                <button class="ghost-btn quick-action" data-quick-action="open-latest">Apri ultima tesi aggiornata</button>
+                <button class="ghost-btn quick-action" data-quick-action="go-providers">Controlla endpoint provider</button>
+              </div>
+            </article>
+
+            <article class="card">
+              <h2>Modulo 2 attivo</h2>
+              <p>
+                Questa versione abilita indice, abstract, capitoli, revisione capitolo e osservazioni del relatore
+                direttamente nella desktop admin, senza i lock commerciali dell'app utenti.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section id="view-theses" class="view">
+          <div class="split-grid theses-grid">
+            <article class="card">
+              <div class="section-head">
+                <div>
+                  <h2>Nuova tesi admin</h2>
+                  <p>Crea una nuova tesi interna completa, con generazione libera e senza vincoli di licenza.</p>
+                </div>
+              </div>
+              <form id="thesis-form" class="form-grid">
+                <label>
+                  <span>Tipo laurea</span>
+                  <select id="field-degree-type">
+                    <option value="Triennale">Triennale</option>
+                    <option value="Magistrale">Magistrale</option>
+                    <option value="Magistrale a ciclo unico">Magistrale a ciclo unico</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Facoltà</span>
+                  <select id="field-faculty">
+                    <option value="">Seleziona facoltà</option>
+                    <option value="Economia">Economia</option>
+                    <option value="Giurisprudenza">Giurisprudenza</option>
+                    <option value="Ingegneria">Ingegneria</option>
+                    <option value="Lettere e Filosofia">Lettere e Filosofia</option>
+                    <option value="Lingue e Letterature">Lingue e Letterature</option>
+                    <option value="Medicina e Chirurgia">Medicina e Chirurgia</option>
+                    <option value="Psicologia">Psicologia</option>
+                    <option value="Scienze della Comunicazione">Scienze della Comunicazione</option>
+                    <option value="Scienze della Formazione">Scienze della Formazione</option>
+                    <option value="Scienze Matematiche, Fisiche e Naturali">Scienze Matematiche, Fisiche e Naturali</option>
+                    <option value="Scienze Politiche">Scienze Politiche</option>
+                    <option value="Scienze Sociali">Scienze Sociali</option>
+                    <option value="Sociologia">Sociologia</option>
+                    <option value="Studi Umanistici">Studi Umanistici</option>
+                    <option value="__custom__">Altro / personalizzata</option>
+                  </select>
+                </label>
+                <label id="field-faculty-custom-wrap" class="hidden faculty-custom-wrap">
+                  <span>Facoltà personalizzata</span>
+                  <input id="field-faculty-custom" type="text" placeholder="Inserisci la facoltà personalizzata" />
+                </label>
+                <label>
+                  <span>Corso di laurea</span>
+                  <input id="field-course" type="text" placeholder="Es. Marketing e comunicazione d'impresa" />
+                </label>
+                <label>
+                  <span>Metodo</span>
+                  <select id="field-method">
+                    <option value="Teorica">Teorica</option>
+                    <option value="Comparativa">Comparativa</option>
+                    <option value="Caso studio">Caso studio</option>
+                    <option value="Revisione sistematica">Revisione sistematica</option>
+                    <option value="Personalizzato">Personalizzato</option>
+                  </select>
+                </label>
+                <label class="full-span">
+                  <span>Titolo tesi</span>
+                  <input id="field-title" type="text" placeholder="Es. Il marketing politico digitale tra consenso, piattaforme e leadership" />
+                </label>
+                <label class="full-span">
+                  <span>Argomento</span>
+                  <textarea id="field-topic" rows="4" placeholder="Descrivi argomento, focus e taglio della tesi."></textarea>
+                </label>
+                <label class="full-span">
+                  <span>Note admin</span>
+                  <textarea id="field-notes" rows="4" placeholder="Note operative interne, istruzioni o promemoria."></textarea>
+                </label>
+                <div class="form-actions">
+                  <button class="primary-btn" type="submit">Crea nuova tesi</button>
+                  <button class="ghost-btn" type="button" id="reset-form-btn">Svuota campi</button>
+                </div>
+              </form>
+            </article>
+
+            <article class="card">
+              <div class="section-head section-head-between">
+                <div>
+                  <h2>Archivio tesi admin</h2>
+                  <p>Apri, duplica, archivia o elimina definitivamente i progetti interni.</p>
+                </div>
+                <div class="mini-badge" id="thesis-count-badge">0 tesi</div>
+              </div>
+              <div class="toolbar-grid">
+                <input id="thesis-search" type="text" placeholder="Cerca per titolo, facoltà, corso o argomento" />
+                <select id="thesis-filter-status">
+                  <option value="all">Tutte</option>
+                  <option value="active">Solo attive</option>
+                  <option value="archived">Solo archiviate</option>
+                </select>
+                <select id="thesis-sort-mode">
+                  <option value="updated">Ordina: aggiornate di recente</option>
+                  <option value="created">Ordina: create di recente</option>
+                  <option value="title">Ordina: titolo A-Z</option>
+                </select>
+              </div>
+              <div id="thesis-empty-state" class="empty-state">Nessuna tesi presente. Crea la prima tesi admin.</div>
+              <div id="thesis-list" class="thesis-list"></div>
+            </article>
+          </div>
+        </section>
+
+        <section id="view-workspace" class="view">
+          <article class="card">
+            <div class="section-head section-head-between workspace-head">
+              <div>
+                <h2 id="workspace-title">Workspace tesi</h2>
+                <p id="workspace-subtitle">Apri una tesi dall'archivio per generare e revisionare i contenuti.</p>
+              </div>
+              <div class="workspace-actions">
+                <button class="ghost-btn" id="workspace-save-btn" type="button" disabled>Salva modifiche</button>
+                <button class="ghost-btn" id="workspace-duplicate-btn" type="button" disabled>Duplica</button>
+                <button class="ghost-btn" id="workspace-archive-btn" type="button" disabled>Archivia</button>
+                <button class="danger-btn" id="workspace-delete-btn" type="button" disabled>Elimina</button>
+              </div>
+            </div>
+
+            <div id="workspace-empty" class="empty-state large-empty-state">
+              Nessuna tesi selezionata. Vai in <strong>Gestione Tesi</strong> e apri un progetto per lavorare nel workspace.
+            </div>
+
+            <div id="workspace-runtime-strip" class="runtime-strip hidden">
+              <div class="runtime-chip" id="runtime-dirty-indicator">Stato bozza: stabile</div>
+              <div class="runtime-chip" id="runtime-save-indicator">Ultimo salvataggio: —</div>
+              <div class="runtime-chip" id="runtime-op-indicator">Operazioni: nessuna</div>
+            </div>
+
+            <div id="workspace-recovery-banner" class="recovery-banner hidden">
+              <div>
+                <strong>Recupero sessione</strong>
+                <p id="workspace-recovery-message">Sessione precedente ripristinata.</p>
+              </div>
+              <div class="row-actions">
+                <button class="ghost-btn small-btn" id="workspace-recovery-open-btn" type="button">Apri tesi coinvolta</button>
+                <button class="ghost-btn small-btn" id="workspace-recovery-dismiss-btn" type="button">Chiudi avviso</button>
+              </div>
+            </div>
+
+            <div id="workspace-panel" class="workspace-panel hidden">
+              <div class="workspace-meta-grid three-cols">
+                <label><span>Tipo laurea</span><select id="workspace-field-degree-type"><option>Triennale</option><option>Magistrale</option><option>Magistrale a ciclo unico</option></select></label>
+                <label><span>Facoltà</span>
+                  <select id="workspace-field-faculty">
+                    <option value="">Seleziona facoltà</option>
+                    <option value="Economia">Economia</option>
+                    <option value="Giurisprudenza">Giurisprudenza</option>
+                    <option value="Ingegneria">Ingegneria</option>
+                    <option value="Lettere e Filosofia">Lettere e Filosofia</option>
+                    <option value="Lingue e Letterature">Lingue e Letterature</option>
+                    <option value="Medicina e Chirurgia">Medicina e Chirurgia</option>
+                    <option value="Psicologia">Psicologia</option>
+                    <option value="Scienze della Comunicazione">Scienze della Comunicazione</option>
+                    <option value="Scienze della Formazione">Scienze della Formazione</option>
+                    <option value="Scienze Matematiche, Fisiche e Naturali">Scienze Matematiche, Fisiche e Naturali</option>
+                    <option value="Scienze Politiche">Scienze Politiche</option>
+                    <option value="Scienze Sociali">Scienze Sociali</option>
+                    <option value="Sociologia">Sociologia</option>
+                    <option value="Studi Umanistici">Studi Umanistici</option>
+                    <option value="__custom__">Altro / personalizzata</option>
+                  </select>
+                </label>
+                <label id="workspace-faculty-custom-wrap" class="hidden faculty-custom-wrap"><span>Facoltà personalizzata</span><input id="workspace-field-faculty-custom" type="text" /></label>
+                <label><span>Corso</span><input id="workspace-field-course" type="text" /></label>
+                <label><span>Metodo</span><select id="workspace-field-method"><option>Teorica</option><option>Comparativa</option><option>Caso studio</option><option>Revisione sistematica</option><option>Personalizzato</option></select></label>
+                <label class="double-span"><span>Titolo</span><input id="workspace-field-title" type="text" /></label>
+                <label><span>Capitolo corrente</span><select id="workspace-chapter-select"></select></label>
+              </div>
+              <label><span>Argomento</span><textarea id="workspace-field-topic" rows="4"></textarea></label>
+              <label><span>Note admin</span><textarea id="workspace-field-notes" rows="3"></textarea></label>
+
+              <div class="workspace-body-grid full-grid">
+                <article class="subcard">
+                  <div class="section-head section-head-between compact-head">
+                    <div><h3>Indice</h3><p class="muted-small">Genera, revisiona e ripristina le versioni dell'indice.</p></div>
+                    <div class="row-actions">
+                      <button class="primary-btn small-btn" id="outline-generate-btn" type="button">Genera indice</button>
+                      <button class="ghost-btn small-btn" id="outline-revise-toggle-btn" type="button">Revisiona</button>
+                      <button class="ghost-btn small-btn" id="outline-copy-btn" type="button">Copia</button>
+                      <button class="ghost-btn small-btn" id="outline-export-btn" type="button">TXT</button>
+                      <button class="danger-btn small-btn" id="outline-delete-btn" type="button">Elimina</button>
+                    </div>
+                  </div>
+                  <textarea id="workspace-outline" rows="14" placeholder="Qui comparirà l'indice della tesi."></textarea>
+                  <div class="review-box hidden" id="outline-review-box">
+                    <textarea id="outline-review-notes" rows="3" placeholder="Osservazioni per la revisione dell'indice"></textarea>
+                    <div class="row-actions">
+                      <button class="primary-btn small-btn" id="outline-review-submit-btn" type="button">Applica revisione indice</button>
+                      <button class="ghost-btn small-btn" id="outline-review-cancel-btn" type="button">Chiudi</button>
+                    </div>
+                  </div>
+                  <div class="versions-row">
+                    <select id="outline-version-select"></select>
+                    <button class="ghost-btn small-btn" id="outline-save-version-btn" type="button">Salva versione</button>
+                    <button class="ghost-btn small-btn" id="outline-restore-btn" type="button">Ripristina</button>
+                  </div>
+                  <div class="versions-meta" id="outline-version-meta">Nessuna versione salvata.</div>
+                </article>
+
+                <article class="subcard">
+                  <div class="section-head section-head-between compact-head">
+                    <div><h3>Abstract</h3><p class="muted-small">Genera l'abstract a partire dal progetto e dall'indice corrente.</p></div>
+                    <div class="row-actions">
+                      <button class="primary-btn small-btn" id="abstract-generate-btn" type="button">Genera abstract</button>
+                      <button class="ghost-btn small-btn" id="abstract-revise-toggle-btn" type="button">Revisiona</button>
+                      <button class="ghost-btn small-btn" id="abstract-copy-btn" type="button">Copia</button>
+                      <button class="ghost-btn small-btn" id="abstract-export-btn" type="button">TXT</button>
+                      <button class="danger-btn small-btn" id="abstract-delete-btn" type="button">Elimina</button>
+                    </div>
+                  </div>
+                  <textarea id="workspace-abstract" rows="14" placeholder="Qui comparirà l'abstract."></textarea>
+                  <div class="review-box hidden" id="abstract-review-box">
+                    <textarea id="abstract-review-notes" rows="3" placeholder="Osservazioni per la revisione dell'abstract"></textarea>
+                    <div class="row-actions">
+                      <button class="primary-btn small-btn" id="abstract-review-submit-btn" type="button">Applica revisione abstract</button>
+                      <button class="ghost-btn small-btn" id="abstract-review-cancel-btn" type="button">Chiudi</button>
+                    </div>
+                  </div>
+                  <div class="versions-row">
+                    <select id="abstract-version-select"></select>
+                    <button class="ghost-btn small-btn" id="abstract-save-version-btn" type="button">Salva versione</button>
+                    <button class="ghost-btn small-btn" id="abstract-restore-btn" type="button">Ripristina</button>
+                  </div>
+                  <div class="versions-meta" id="abstract-version-meta">Nessuna versione salvata.</div>
+                </article>
+
+                <article class="subcard chapter-subcard">
+                  <div class="section-head section-head-between compact-head">
+                    <div><h3>Capitoli</h3><p class="muted-small">Gestisci titoli, contenuti, revisioni e osservazioni relatore.</p></div>
+                    <div class="row-actions">
+                      <button class="ghost-btn small-btn" id="chapter-add-btn" type="button">Aggiungi capitolo</button>
+                      <button class="danger-btn small-btn" id="chapter-remove-btn" type="button">Elimina capitolo corrente</button>
+                    </div>
+                  </div>
+                  <label><span>Titolo capitolo</span><input id="workspace-chapter-title" type="text" /></label>
+                  <div class="row-actions wrap-gap">
+                    <button class="primary-btn small-btn" id="chapter-generate-btn" type="button">Genera capitolo</button>
+                    <button class="ghost-btn small-btn" id="chapter-revise-toggle-btn" type="button">Revisione capitolo</button>
+                    <button class="ghost-btn small-btn" id="chapter-tutor-toggle-btn" type="button">Osservazioni relatore</button>
+                    <button class="ghost-btn small-btn" id="chapter-copy-btn" type="button">Copia</button>
+                    <button class="ghost-btn small-btn" id="chapter-export-btn" type="button">TXT</button>
+                    <button class="danger-btn small-btn" id="chapter-clear-btn" type="button">Svuota testo</button>
+                  </div>
+                  <textarea id="workspace-chapter-content" rows="18" placeholder="Qui comparirà il contenuto del capitolo corrente."></textarea>
+                  <div class="review-box hidden" id="chapter-review-box">
+                    <textarea id="chapter-review-notes" rows="3" placeholder="Indicazioni per la revisione del capitolo"></textarea>
+                    <div class="row-actions">
+                      <button class="primary-btn small-btn" id="chapter-review-submit-btn" type="button">Applica revisione capitolo</button>
+                      <button class="ghost-btn small-btn" id="chapter-review-cancel-btn" type="button">Chiudi</button>
+                    </div>
+                  </div>
+                  <div class="review-box hidden" id="chapter-tutor-box">
+                    <textarea id="chapter-tutor-notes" rows="3" placeholder="Osservazioni del relatore da recepire"></textarea>
+                    <div class="row-actions">
+                      <button class="primary-btn small-btn" id="chapter-tutor-submit-btn" type="button">Applica osservazioni relatore</button>
+                      <button class="ghost-btn small-btn" id="chapter-tutor-cancel-btn" type="button">Chiudi</button>
+                    </div>
+                  </div>
+                  <div class="versions-row">
+                    <select id="chapter-version-select"></select>
+                    <button class="ghost-btn small-btn" id="chapter-save-version-btn" type="button">Salva versione</button>
+                    <button class="ghost-btn small-btn" id="chapter-restore-btn" type="button">Ripristina</button>
+                  </div>
+                  <div class="versions-meta" id="chapter-version-meta">Nessuna versione salvata.</div>
+                </article>
+              </div>
+
+              <article class="subcard status-subcard">
+                <div class="section-head section-head-between compact-head">
+                  <div><h3>Stato operativo</h3></div>
+                  <div class="mini-badge" id="workspace-thesis-badge">Nessuna tesi</div>
+                </div>
+                <div id="workspace-status-log" class="status-log">Nessuna operazione eseguita.</div>
+              </article>
+            </div>
+          </article>
+        </section>
+
+        <section id="view-events" class="view">
+          <article class="card">
+            <div class="section-head section-head-between event-head">
+              <div>
+                <h2>Eventi e Diagnostica</h2>
+                <p>Storico locale delle azioni eseguite nella desktop admin, con filtri, ricerca ed export.</p>
+              </div>
+              <div class="row-actions wrap-gap">
+                <button class="ghost-btn" id="events-export-txt-btn" type="button">Export TXT</button>
+                <button class="ghost-btn" id="events-export-json-btn" type="button">Export JSON</button>
+                <button class="ghost-btn" id="events-copy-summary-btn" type="button">Copia sintesi</button>
+                <button class="ghost-btn" id="events-clear-btn" type="button">Svuota log</button>
+              </div>
+            </div>
+            <div class="diagnostics-toolbar-grid">
+              <input id="events-search" type="text" placeholder="Cerca in messaggio, tipo, tesi o dettaglio errore" />
+              <select id="events-filter-severity">
+                <option value="all">Tutte le severità</option>
+                <option value="error">Solo errori</option>
+                <option value="warning">Solo avvisi</option>
+                <option value="info">Solo info</option>
+                <option value="success">Solo successi</option>
+              </select>
+              <select id="events-filter-type">
+                <option value="all">Tutti i tipi evento</option>
+              </select>
+            </div>
+            <div class="diagnostics-summary-grid">
+              <div class="mini-summary-card">
+                <span class="summary-label">Totale log</span>
+                <strong id="diag-total-count">0</strong>
+              </div>
+              <div class="mini-summary-card">
+                <span class="summary-label">Errori</span>
+                <strong id="diag-error-count">0</strong>
+              </div>
+              <div class="mini-summary-card">
+                <span class="summary-label">Avvisi</span>
+                <strong id="diag-warning-count">0</strong>
+              </div>
+              <div class="mini-summary-card">
+                <span class="summary-label">Ultimo evento</span>
+                <strong id="diag-last-event">—</strong>
+              </div>
+            </div>
+            <div id="events-list" class="events-list"></div>
+          </article>
+        </section>
+
+        <section id="view-providers" class="view">
+          <article class="card provider-card">
+            <h2>Provider e Prompt</h2>
+            <p>La desktop admin usa l'endpoint API remoto della tua AccademIA web. Puoi modificarlo qui. I test qui sotto verificano la raggiungibilità del percorso e la risposta tecnica del backend, ma non avviano una vera generazione di contenuto.</p>
+            <div class="form-grid two-cols">
+              <label>
+                <span>Endpoint base AccademIA</span>
+                <input id="settings-api-base" type="text" placeholder="Es. https://www.accademia-tesi.it" />
+              </label>
+              <label>
+                <span>Timeout base richiesta (ms)</span>
+                <input id="settings-timeout" type="number" min="5000" step="5000" />
+              </label>
+            </div>
+            <div class="form-actions">
+              <button class="primary-btn" id="settings-save-btn" type="button">Salva impostazioni</button>
+              <button class="ghost-btn" id="settings-test-btn" type="button">Test endpoint</button>
+            </div>
+            <div id="settings-status" class="empty-state compact-empty-state">Nessun test eseguito. Per i capitoli la desktop applica automaticamente un timeout più lungo.</div>
+          </article>
+        </section>
+
+<section id="view-tools" class="view">
+  <div class="tools-grid">
+    <article class="card">
+      <h2>Strumenti Admin</h2>
+      <p class="muted-small">Export strutturati della tesi corrente con salvataggio file nativo della desktop.</p>
+      <div class="plain-list">
+        <button class="ghost-btn" id="tool-export-thesis-btn" type="button">Esporta tesi corrente in TXT</button>
+        <button class="ghost-btn" id="tool-export-thesis-html-btn" type="button">Esporta tesi corrente in HTML</button>
+        <button class="ghost-btn" id="tool-export-thesis-json-btn" type="button">Esporta tesi corrente in JSON</button>
+        <button class="primary-btn" id="tool-export-thesis-docx-btn" type="button">Esporta tesi corrente in DOCX</button>
+        <button class="primary-btn" id="tool-export-thesis-pdf-btn" type="button">Esporta tesi corrente in PDF</button>
+        <button class="ghost-btn" id="tool-duplicate-current-btn" type="button">Duplica tesi corrente</button>
+        <button class="danger-btn" id="tool-archive-current-btn" type="button">Archivia/Riattiva tesi corrente</button>
+      </div>
+    </article>
+
+    <article class="card tools-system-card">
+      <h2>Controllo app e build</h2>
+      <p class="muted-small">Verifica rapida dell'ambiente desktop, del packaging e della cartella dati locale.</p>
+      <div class="system-info-grid">
+        <div class="mini-summary-card">
+          <span class="summary-label">Versione</span>
+          <strong id="tool-app-version">—</strong>
+        </div>
+        <div class="mini-summary-card">
+          <span class="summary-label">Piattaforma</span>
+          <strong id="tool-app-platform">—</strong>
+        </div>
+        <div class="mini-summary-card">
+          <span class="summary-label">Electron</span>
+          <strong id="tool-app-electron">—</strong>
+        </div>
+        <div class="mini-summary-card">
+          <span class="summary-label">Archivio locale</span>
+          <strong id="tool-app-storage-status">—</strong>
+        </div>
+      </div>
+      <div class="plain-list">
+        <button class="ghost-btn" id="tool-run-preflight-btn" type="button">Verifica app e packaging</button>
+        <button class="ghost-btn" id="tool-copy-app-summary-btn" type="button">Copia sintesi ambiente</button>
+        <button class="ghost-btn" id="tool-open-state-folder-btn" type="button">Apri cartella dati locale</button>
+      </div>
+      <div id="tools-system-report" class="empty-state compact-empty-state">Nessuna verifica eseguita.</div>
+    </article>
+  </div>
+</section>
+      </main>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
+    <script type="module" src="./renderer.js"></script>
+  </body>
+</html>
