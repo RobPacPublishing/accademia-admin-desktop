@@ -26,7 +26,6 @@
   "build": {
     "appId": "com.robpac.accademiaadmindesktop",
     "productName": "AccademIA Admin Desktop",
-    "artifactName": "AccademIA-Admin-Desktop-${version}-${arch}.${ext}",
     "asar": true,
     "directories": {
       "output": "dist",
@@ -40,6 +39,7 @@
       "package.json"
     ],
     "win": {
+      "artifactName": "AccademIA-Admin-Desktop-${version}-${arch}.${ext}",
       "target": [
         {
           "target": "nsis",
@@ -57,6 +57,7 @@
       "icon": "build/icon.ico"
     },
     "nsis": {
+      "artifactName": "AccademIA-Admin-Desktop-Setup-${version}-${arch}.${ext}",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
@@ -65,6 +66,9 @@
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico",
       "installerHeaderIcon": "build/icon.ico"
+    },
+    "portable": {
+      "artifactName": "AccademIA-Admin-Desktop-Portable-${version}-${arch}.${ext}"
     }
   },
   "dependencies": {
