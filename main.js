@@ -166,7 +166,13 @@ async function writeStateFile(raw) {
   const stateFilePath = getStateFilePath();
   const tempFilePath = `${stateFilePath}.tmp`;
   await fs.writeFile(tempFilePath, raw, 'utf8');
-  await fs.rename(tempFilePath, stateFilePath);
+  try {
+    await fs.rename(tempFilePath, stateFilePath);
+  } catch (_) {
+    // fallback: scrittura diretta se rename fallisce (es. Windows file lock)
+    await fs.writeFile(stateFilePath, raw, 'utf8');
+    try { await fs.unlink(tempFilePath); } catch (_) {}
+  }
   return { ok: true, stateFilePath };
 }
 
@@ -178,8 +184,13 @@ function writeStateFileSync(raw) {
   fsSync.mkdirSync(getStateDirectory(), { recursive: true });
   const stateFilePath = getStateFilePath();
   const tempFilePath = `${stateFilePath}.tmp`;
-  fsSync.writeFileSync(tempFilePath, raw, 'utf8');
-  fsSync.renameSync(tempFilePath, stateFilePath);
+  try {
+    fsSync.writeFileSync(tempFilePath, raw, 'utf8');
+    fsSync.renameSync(tempFilePath, stateFilePath);
+  } catch (_) {
+    fsSync.writeFileSync(stateFilePath, raw, 'utf8');
+    try { fsSync.unlinkSync(tempFilePath); } catch (_) {}
+  }
   return { ok: true, stateFilePath };
 }
 

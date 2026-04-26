@@ -496,6 +496,18 @@ function updateOperationDetail(detail) {
   logStatus(detail, 'busy', '');
 }
 
+function cleanMarkdown(text) {
+  return String(text || '')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/\*([^*]+)\*/g, '$1')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/^---+$/gm, '')
+    .replace(/^___+$/gm, '')
+    .replace(/\[(\d+)\]\s*:/g, '$1.')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 function appendEvent(type, message, payload = {}) {
   pushAdminEvent(state, type, message, payload);
   persistState();
@@ -1515,23 +1527,37 @@ document.getElementById('chapter-generate-btn').addEventListener('click', async 
     const settings = getRuntimeState().settings;
     const timeout = getTaskTimeout('chapter_draft');
 
-    // Step 1: paragrafo introduttivo
-    await updateOperationDetail('Generazione paragrafo introduttivo…');
-    const openingPrompt = promptChapterOpening(thesis, chapterIndex);
-    const openingInput = buildStructuredTaskInput(thesis, 'chapter_draft', openingPrompt, { chapterIndex });
-    const openingResult = await callTaskApi('chapter_draft', openingInput, settings, { timeoutMs: timeout });
-    fullText = (openingResult.text || '').trim();
-
-    // Step 2: sottosezioni una per una
+    // Step 1: sottosezioni una per una (no opening separato)
     if (subsections.length) {
+      const chapterTitle = thesis.chapterTitles[chapterIndex] || '';
+      const logLines = subsections.map(s => `⏳ ${s}`);
+      const statusEl = document.getElementById('status-log');
+
+      const renderLog = () => {
+        if (statusEl) statusEl.innerHTML = `<strong>Generazione capitolo in corso</strong><div class="status-detail" style="white-space:pre-line">${logLines.join('\n')}</div>`;
+      };
+
+      renderLog();
+
       for (let i = 0; i < subsections.length; i++) {
         const sub = subsections[i];
-        await updateOperationDetail(`Generazione ${sub}… (${i + 1}/${subsections.length})`);
-        const subPrompt = promptChapterSubsection(thesis, chapterIndex, sub, i, subsections.length, fullText);
-        const subInput = buildStructuredTaskInput(thesis, 'chapter_draft', subPrompt, { chapterIndex });
-        const subResult = await callTaskApi('chapter_draft', subInput, settings, { timeoutMs: timeout });
-        const subText = (subResult.text || '').trim();
-        if (subText) fullText = `${fullText}\n\n${subText}`;
+        logLines[i] = `⏳ ${sub} (generazione…)`;
+        renderLog();
+
+        const subPrompt = promptChapterSubsection(thesis, chapterIndex, sub, i, subsections.length, '');
+        const subInput = { prompt: subPrompt, taskName: 'chapter_subsection', adminUnlimitedMode: true };
+        const subResult = await callTaskApi('chapter_subsection', subInput, settings, { timeoutMs: timeout });
+        let subText = (subResult.text || '').trim();
+
+        // Rimuovi titolo capitolo se il modello lo ha incluso spuriamente
+        subText = subText.replace(/^(?:#+\s*)?(?:Capitolo\s+\d+[^\n]*\n+)/i, '').trim();
+        // Rimuovi sezioni Note spurie
+        subText = subText.replace(/\n+(?:---+\s*)?\n*(?:\*{0,2})Note(?:\*{0,2})\s*\n[\s\S]*$/i, '').trim();
+
+        if (subText) fullText = fullText ? `${fullText}\n\n${subText}` : subText;
+
+        logLines[i] = `✓ ${sub}`;
+        renderLog();
       }
     } else {
       // Nessuna sottosezione nell'indice: genera in blocco unico
@@ -1542,7 +1568,7 @@ document.getElementById('chapter-generate-btn').addEventListener('click', async 
       fullText = (bodyResult.text || '').trim();
     }
 
-    // Step 3: note (se attive)
+    // Step 2: note (se attive)
     const includeNotes = chapterIncludeNotesEl?.checked !== false;
     if (includeNotes && fullText && !/\nNote\s*\n/i.test(fullText)) {
       try {
@@ -1550,10 +1576,12 @@ document.getElementById('chapter-generate-btn').addEventListener('click', async 
         const notesPrompt = buildChapterNotes(thesis, fullText);
         const notesInput = buildStructuredTaskInput(thesis, 'chapter_draft', notesPrompt, { chapterIndex });
         const notesResult = await callTaskApi('chapter_draft', notesInput, settings, { timeoutMs: 40000 });
-        const notesText = (notesResult.text || '').trim();
+        const notesText = cleanMarkdown((notesResult.text || '').trim());
         if (notesText) fullText = `${fullText}\n\n${notesText}`;
       } catch (_) { /* note opzionali, non bloccare */ }
     }
+
+    fullText = cleanMarkdown(fullText);
 
     if (chapterContentEl) chapterContentEl.value = fullText;
     applyChapterToThesis(thesis, chapterIndex, fullText, 'Capitolo generato');

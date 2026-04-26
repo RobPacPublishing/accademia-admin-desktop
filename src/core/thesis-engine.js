@@ -392,6 +392,7 @@ export function promptChapterOpening(thesis, chapterIndex) {
       'Lunghezza: 150-250 parole. Tono accademico, nessuna formula scolastica come "in questo capitolo si analizzeranno".',
       'Non includere titoli, sottotitoli o intestazioni.',
       'Non iniziare con il titolo del capitolo.',
+      'NON aggiungere sezioni Note, riferimenti bibliografici o appendici.',
       'Restituisci solo il testo del paragrafo introduttivo.',
     ].join('\n'),
   ].filter(Boolean).join('\n\n');
@@ -411,10 +412,12 @@ export function promptChapterSubsection(thesis, chapterIndex, subsection, subsec
     `ARGOMENTO: ${thesis.topic}`,
     thesis.notes ? `ISTRUZIONI OPERATIVE:\n${thesis.notes}` : '',
     disciplinary ? `PROFILO DISCIPLINARE:\n${disciplinary}` : '',
-    previousText ? `TESTO GIA' GENERATO (non ripetere, mantieni continuita'):\n${previousText.slice(-1500)}` : '',
+    subsectionIndex > 0 ? `NOTA: questa e' la sottosezione ${subsectionIndex + 1} di ${totalSubsections}. Le sottosezioni precedenti sono gia' state generate. NON rigenerare le sottosezioni precedenti.` : '',
     [
       'REGOLE OBBLIGATORIE:',
       `Inizia esattamente con il titolo della sottosezione: ${subsection}`,
+      'NON scrivere il titolo del capitolo prima del titolo della sottosezione.',
+      'NON scrivere intestazioni come "Capitolo 1 —" o simili.',
       'Sviluppa SOLO questa sottosezione, completa e autonoma.',
       'Lunghezza: 400-700 parole. Tono accademico, taglio critico-analitico.',
       'Progressione argomentativa esplicita: ogni paragrafo aggiunge un tassello teorico nuovo.',
@@ -423,6 +426,7 @@ export function promptChapterSubsection(thesis, chapterIndex, subsection, subsec
       'Non inventare fonti, autori, anni o dati empirici.',
       'Dove opportuno inserisci rimandi numerati [1][2][3] - massimo 2 per sottosezione.',
       'Nessun elenco puntato, nessun markdown non richiesto.',
+      'NON aggiungere sezioni Note, riferimenti bibliografici o appendici: le note saranno generate separatamente a fine capitolo.',
     ].join('\n'),
   ].filter(Boolean).join('\n\n');
 }
