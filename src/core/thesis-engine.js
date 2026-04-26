@@ -311,7 +311,7 @@ export function promptChapter(thesis, chapterIndex) {
 ${expectedSubsections.join('
 ')}
 Sviluppa tutte le sottosezioni con continuità, senza fermarti a metà.`
-    : 'Se l\'indice suggerisce sottosezioni implicite del capitolo, sviluppale tutte in modo coerente.';
+    : 'Se l'indice suggerisce sottosezioni implicite del capitolo, sviluppale tutte in modo coerente.';
   const prevSummary = summarizePreviousChapters(thesis, chapterIndex);
   return [
     'TASK: chapter_draft',
@@ -356,7 +356,7 @@ export function promptChapterRevision(thesis, chapterIndex, notes) {
   const chapterContent = thesis.chapters?.[chapterIndex]?.content || '';
   const expectedSubsections = getExpectedSubsections(thesis.outline, chapterIndex);
   const subsectionBlock = expectedSubsections.length
-    ? `Mantieni le sottosezioni previste dall\'indice: ${expectedSubsections.join('; ')}.`
+    ? `Mantieni le sottosezioni previste dall'indice: ${expectedSubsections.join('; ')}.`
     : '';
   return [
     'TASK: chapter_review',
