@@ -420,7 +420,7 @@ export function promptChapterRevision(thesis, chapterIndex, notes) {
     `CONTESTO ACCADEMICO\nFacolt\u00e0: ${thesis.faculty}\nCorso: ${thesis.course}\nTipo laurea: ${thesis.degreeType}`,
     `ARGOMENTO: ${thesis.topic}`,
     `INDICE APPROVATO:\n${thesis.outline}`,
-    chapterContent ? `TESTO ATTUALE DEL CAPITOLO:\n${chapterContent}` : '',
+    chapterContent ? `TESTO ATTUALE DEL CAPITOLO:\n${chapterContent.slice(0, 6000)}` : '',
     `OSSERVAZIONI:\n${notes}`,
     subsectionBlock,
     [
@@ -457,7 +457,7 @@ export function promptTutorRevision(thesis, chapterIndex, tutorInput) {
     thesis.notes ? `ISTRUZIONI OPERATIVE:\n${thesis.notes}` : '',
     `INDICE APPROVATO:\n${thesis.outline}`,
     thesis.abstract ? `ABSTRACT APPROVATO:\n${thesis.abstract}` : '',
-    chapterContent ? `CAPITOLO ATTUALE:\n${chapterContent}` : '',
+    chapterContent ? `CAPITOLO ATTUALE:\n${chapterContent.slice(0, 6000)}` : '',
     `OSSERVAZIONI DEL RELATORE:\n${notes}`,
     extracts ? `ESTRATTI DA INTEGRARE:\n${extracts}` : '',
     authors ? `AUTORI E TEORIE DA CONSIDERARE:\n${authors}` : '',
