@@ -1589,7 +1589,7 @@ document.getElementById('chapter-harmonize-btn').addEventListener('click', () =>
   );
 });
 
-.addEventListener('click', async () => {
+document.getElementById('outline-copy-btn').addEventListener('click', async () => {
   const ok = await copyText(outlineEl.value);
   showToast(ok ? 'Indice copiato.' : 'Copia non riuscita.', !ok);
 });
