@@ -16,7 +16,8 @@ import {
   promptAbstractRevision,
   promptChapter,
   promptChapterRevision,
-  promptTutorRevision
+  promptTutorRevision,
+  buildChapterNotes
 } from './core/thesis-engine.js';
 import { loadAdminState, saveAdminState, copyText, saveAdminExportFile, buildThesisExportBaseName, exportThesisDocx, exportThesisPdf } from './services/storage-service.js';
 import { callTaskApi, testApiConnection } from './services/provider-service.js';
@@ -162,6 +163,7 @@ const outlineReviewNotesEl = document.getElementById('outline-review-notes');
 const abstractReviewNotesEl = document.getElementById('abstract-review-notes');
 const chapterReviewNotesEl = document.getElementById('chapter-review-notes');
 const chapterTutorNotesEl = document.getElementById('chapter-tutor-notes');
+const chapterIncludeNotesEl = document.getElementById('chapter-include-notes');
 
 
 function hasOption(selectEl, value) {
@@ -1495,7 +1497,20 @@ document.getElementById('abstract-review-submit-btn').addEventListener('click', 
 document.getElementById('chapter-generate-btn').addEventListener('click', () => runTask(
   'chapter_draft',
   (thesis) => promptChapter(thesis, thesis.currentChapterIndex),
-  (thesis, text) => applyChapterToThesis(thesis, thesis.currentChapterIndex, text, 'Capitolo generato'),
+  async (thesis, text) => {
+    let finalText = text;
+    const includeNotes = chapterIncludeNotesEl?.checked !== false;
+    if (includeNotes && finalText && !/\nNote\s*\n/i.test(finalText)) {
+      try {
+        const notesPrompt = buildChapterNotes(thesis, finalText);
+        const notesResult = await callTaskApi('chapter_notes', { prompt: notesPrompt }, getRuntimeState().settings, { timeoutMs: 30000 });
+        const notesText = notesResult?.text || notesResult?.result || '';
+        if (notesText) finalText = `${finalText.trim()}\n\n${notesText.trim()}`;
+      } catch (_) { /* se le note falliscono non bloccare il capitolo */ }
+    }
+    if (workspaceEls.chapterContent) workspaceEls.chapterContent.value = finalText;
+    applyChapterToThesis(thesis, thesis.currentChapterIndex, finalText, 'Capitolo generato');
+  },
   { toast: 'Capitolo generato.', doneLabel: 'Capitolo generato con successo.', eventMessage: 'Generato capitolo tesi', statusLabel: 'Generazione capitolo in corso', initialDetail: 'Richiesta capitolo inviata. Il provider può impiegare più tempo rispetto a indice e abstract.', successDetail: 'Capitolo ricevuto, salvato e pronto per revisioni o export.' }
 ));
 
@@ -1517,19 +1532,64 @@ document.getElementById('chapter-review-submit-btn').addEventListener('click', (
 document.getElementById('chapter-tutor-submit-btn').addEventListener('click', () => {
   const notes = chapterTutorNotesEl.value.trim();
   if (!notes) return showToast('Inserisci le osservazioni del relatore.', true);
+  const extracts = (document.getElementById('chapter-tutor-extracts')?.value || '').trim();
+  const authors = (document.getElementById('chapter-tutor-authors')?.value || '').trim();
+  const sections = (document.getElementById('chapter-tutor-sections')?.value || '').trim();
+  const tutorInput = { notes, extracts, authors, sections };
   runTask(
     'tutor_revision',
-    (thesis) => promptTutorRevision(thesis, thesis.currentChapterIndex, notes),
+    (thesis) => promptTutorRevision(thesis, thesis.currentChapterIndex, tutorInput),
     (thesis, text) => {
       applyChapterToThesis(thesis, thesis.currentChapterIndex, text, 'Osservazioni relatore applicate');
       chapterTutorNotesEl.value = '';
+      ['chapter-tutor-extracts', 'chapter-tutor-authors', 'chapter-tutor-sections'].forEach(id => {
+        const el = document.getElementById(id); if (el) el.value = '';
+      });
       chapterTutorBox.classList.add('hidden');
     },
     { toast: 'Osservazioni relatore applicate.', doneLabel: 'Osservazioni relatore applicate al capitolo.', eventMessage: 'Applicate osservazioni relatore', statusLabel: 'Applicazione osservazioni relatore in corso', initialDetail: 'Il provider sta rielaborando il capitolo secondo le osservazioni inserite…' }
   );
 });
 
-document.getElementById('outline-copy-btn').addEventListener('click', async () => {
+document.getElementById('chapter-notes-btn').addEventListener('click', () => {
+  const chapterContent = workspaceEls.chapterContent?.value?.trim();
+  if (!chapterContent) return showToast('Genera prima il capitolo.', true);
+  runTask(
+    'chapter_notes',
+    (thesis) => buildChapterNotes(thesis, chapterContent),
+    (thesis, text) => {
+      const current = workspaceEls.chapterContent?.value || '';
+      const cleaned = current.replace(/\nNote\s*\n[\s\S]*$/i, '').trim();
+      if (workspaceEls.chapterContent) workspaceEls.chapterContent.value = `${cleaned}\n\n${text}`;
+      applyChapterToThesis(thesis, thesis.currentChapterIndex, workspaceEls.chapterContent?.value || '', 'Note aggiunte');
+    },
+    { toast: 'Sezione Note generata.', doneLabel: 'Note aggiunte al capitolo.', eventMessage: 'Note capitolo generate', statusLabel: 'Generazione sezione Note in corso', initialDetail: 'Generazione apparato note…' }
+  );
+});
+
+document.getElementById('chapter-harmonize-btn').addEventListener('click', () => {
+  const chapterContent = workspaceEls.chapterContent?.value?.trim();
+  if (!chapterContent) return showToast('Nessun testo da armonizzare.', true);
+  runTask(
+    'chapter_harmonize_light',
+    (thesis) => [
+      'TASK: chapter_harmonize_light',
+      `CAPITOLO: ${thesis.chapterTitles?.[thesis.currentChapterIndex] || 'Capitolo'}`,
+      'Esegui una sola passata leggera di armonizzazione stilistica del testo esistente.',
+      'OBIETTIVI CONSENTITI:\n- migliora la continuità logica e le transizioni tra sottosezioni quando sono brusche o ridondanti;\n- uniforma stile e lessico accademico in modo coerente;\n- elimina ripetizioni di parole o strutture sintattiche ravvicinate.',
+      'VINCOLI ASSOLUTI:\n- non aggiungere nuove sezioni, sottosezioni o contenuti non presenti nel testo originale;\n- non eliminare passaggi argomentativi, esempi o concetti già presenti;\n- non accorciare il testo in modo significativo: la lunghezza finale deve essere analoga all\'originale;\n- non cambiare la tesi argomentativa, le posizioni teoriche o le conclusioni di nessuna sezione;\n- non rigenerare da zero il capitolo;\n- conserva tutti i titoli delle sottosezioni esattamente come sono.',
+      'Restituisci il capitolo intero armonizzato, non solo le parti modificate.',
+      `TESTO ATTUALE:\n${chapterContent.slice(0, 9000)}`,
+    ].join('\n\n'),
+    (thesis, text) => {
+      if (workspaceEls.chapterContent) workspaceEls.chapterContent.value = text;
+      applyChapterToThesis(thesis, thesis.currentChapterIndex, text, 'Armonizzazione applicata');
+    },
+    { toast: 'Capitolo armonizzato.', doneLabel: 'Armonizzazione completata.', eventMessage: 'Capitolo armonizzato', statusLabel: 'Armonizzazione in corso', initialDetail: 'Uniformazione stile e transizioni…' }
+  );
+});
+
+.addEventListener('click', async () => {
   const ok = await copyText(outlineEl.value);
   showToast(ok ? 'Indice copiato.' : 'Copia non riuscita.', !ok);
 });

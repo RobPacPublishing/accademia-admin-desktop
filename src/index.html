@@ -317,8 +317,14 @@
                     </div>
                   </div>
                   <label><span>Titolo capitolo</span><input id="workspace-chapter-title" type="text" /></label>
+                  <label style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:12px;font-weight:400;text-transform:none;letter-spacing:0">
+                    <input type="checkbox" id="chapter-include-notes" checked style="accent-color:var(--primary)">
+                    <span>Genera sezione <strong>Note</strong> in chiusura del capitolo (con rimandi [1][2][3] nel testo)</span>
+                  </label>
                   <div class="row-actions wrap-gap">
                     <button class="primary-btn small-btn" id="chapter-generate-btn" type="button">Genera capitolo</button>
+                    <button class="ghost-btn small-btn" id="chapter-notes-btn" type="button">Genera Note</button>
+                    <button class="ghost-btn small-btn" id="chapter-harmonize-btn" type="button">Armonizza</button>
                     <button class="ghost-btn small-btn" id="chapter-revise-toggle-btn" type="button">Revisione capitolo</button>
                     <button class="ghost-btn small-btn" id="chapter-tutor-toggle-btn" type="button">Osservazioni relatore</button>
                     <button class="ghost-btn small-btn" id="chapter-copy-btn" type="button">Copia</button>
@@ -334,8 +340,15 @@
                     </div>
                   </div>
                   <div class="review-box hidden" id="chapter-tutor-box">
-                    <textarea id="chapter-tutor-notes" rows="3" placeholder="Osservazioni del relatore da recepire"></textarea>
-                    <div class="row-actions">
+                    <label class="field-label">Osservazioni del relatore <span class="field-required">*</span></label>
+                    <textarea id="chapter-tutor-notes" rows="3" placeholder="Osservazioni, correzioni o richieste puntuali del relatore"></textarea>
+                    <label class="field-label" style="margin-top:10px">Estratti da integrare <span class="field-optional">(opzionale)</span></label>
+                    <textarea id="chapter-tutor-extracts" rows="3" placeholder="Testi, brani o passi ricevuti dall'utente o dal relatore da integrare nel capitolo"></textarea>
+                    <label class="field-label" style="margin-top:10px">Autori / teorie da considerare <span class="field-optional">(opzionale)</span></label>
+                    <textarea id="chapter-tutor-authors" rows="2" placeholder="Es: Freud, teoria dell'attaccamento di Bowlby, approccio cognitivista..."></textarea>
+                    <label class="field-label" style="margin-top:10px">Parti specifiche da modificare <span class="field-optional">(opzionale)</span></label>
+                    <textarea id="chapter-tutor-sections" rows="2" placeholder="Es: riscrivere il paragrafo su X, eliminare la sezione 2.3, ampliare la parte finale..."></textarea>
+                    <div class="row-actions" style="margin-top:12px">
                       <button class="primary-btn small-btn" id="chapter-tutor-submit-btn" type="button">Applica osservazioni relatore</button>
                       <button class="ghost-btn small-btn" id="chapter-tutor-cancel-btn" type="button">Chiudi</button>
                     </div>
