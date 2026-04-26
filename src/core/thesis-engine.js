@@ -238,12 +238,12 @@ export function promptOutline(thesis) {
     [
       'REGOLE OBBLIGATORIE:',
       structureRule,
-      '- Il primo capitolo svolge funzione teorico-fondativa: stato dell'arte, quadro concettuale, definizioni operative.',
-      '- L'ultimo capitolo chiude con sintesi critica, limiti, implicazioni o prospettive future — mai con un mero riepilogo descrittivo.',
+      "- Il primo capitolo svolge funzione teorico-fondativa: stato dell'arte, quadro concettuale, definizioni operative.",
+      "- L'ultimo capitolo chiude con sintesi critica, limiti, implicazioni o prospettive future — mai con un mero riepilogo descrittivo.",
       '- Per tesi teoriche o di review non proporre un capitolo metodologico autonomo: integra la metodologia nel primo o secondo capitolo.',
       '- I titoli di capitoli e sottosezioni devono essere informativi e specifici: evita titoli generici come "Introduzione al tema" o "Considerazioni finali" senza specificazione di contenuto.',
       '- Se la facoltà ha convenzioni strutturali riconoscibili (es. Giurisprudenza: norma → dottrina → giurisprudenza; Psicologia: costrutti → modelli → implicazioni), rispettale.',
-      '- Restituisci solo l'indice numerato nel formato: "1. Titolo capitolo\n   1.1 Titolo sottosezione\n   1.2 Titolo sottosezione\n2. ..." — nessun testo aggiuntivo prima o dopo.',
+      "- Restituisci solo l'indice numerato nel formato: \"1. Titolo capitolo\n   1.1 Titolo sottosezione\n   1.2 Titolo sottosezione\n2. ...\" — nessun testo aggiuntivo prima o dopo.",
     ].join('\n'),
   ].join('\n\n');
 }
@@ -260,7 +260,7 @@ export function promptOutlineRevision(thesis, notes) {
       '- Applica le osservazioni in modo riconoscibile e non cosmetico.',
       '- Conserva la struttura generale salvo richiesta esplicita di cambiarla.',
       '- Mantieni titoli informativi e specifici.',
-      '- Restituisci solo l'indice revisionato, stesso formato dell'originale.',
+      "- Restituisci solo l'indice revisionato, stesso formato dell'originale.",
     ].join('\n'),
   ].join('\n\n');
 }
@@ -276,13 +276,13 @@ export function promptAbstract(thesis) {
     `INDICE APPROVATO:\n${thesis.outline}`,
     [
       'REGOLE OBBLIGATORIE:',
-      '- Struttura l'abstract nelle seguenti componenti nell'ordine indicato: (1) contesto e motivazione, (2) obiettivo o domanda di ricerca, (3) metodologia adottata, (4) principali risultati o argomentazioni, (5) conclusioni e implicazioni.',
+      "- Struttura l'abstract nelle seguenti componenti nell'ordine indicato: (1) contesto e motivazione, (2) obiettivo o domanda di ricerca, (3) metodologia adottata, (4) principali risultati o argomentazioni, (5) conclusioni e implicazioni.",
       `- Lunghezza target: ${wordTarget}.`,
-      '- L'abstract deve essere autonomo: non rimandare a capitoli, non usare riferimenti numerici interni, non usare elenchi puntati.',
+      "- L'abstract deve essere autonomo: non rimandare a capitoli, non usare riferimenti numerici interni, non usare elenchi puntati.",
       '- Tono: sintetico, impersonale, al presente o passato prossimo. Evita il futuro ("si analizzerà", "verranno trattati").',
       '- Non inventare risultati o dati: se la tesi è teorica, descrivi il contributo argomentativo.',
       '- Non usare formule di apertura banali come "Il presente lavoro si propone di" o "Questa tesi analizza".',
-      '- Restituisci solo il testo dell'abstract, senza titolo, intestazioni o commenti aggiuntivi.',
+      "- Restituisci solo il testo dell'abstract, senza titolo, intestazioni o commenti aggiuntivi.",
     ].join('\n'),
   ].join('\n\n');
 }
@@ -298,7 +298,7 @@ export function promptAbstractRevision(thesis, notes) {
       '- Migliora struttura, precisione e tono senza stravolgere il contenuto.',
       '- Mantieni le 5 componenti: contesto, obiettivo, metodologia, risultati/argomentazioni, conclusioni.',
       '- Rendi i miglioramenti riconoscibili.',
-      '- Restituisci solo il testo dell'abstract revisionato.',
+      "- Restituisci solo il testo dell'abstract revisionato.",
     ].join('\n'),
   ].join('\n\n');
 }
@@ -335,12 +335,12 @@ ${prevSummary}` : '',
       'REGOLE OBBLIGATORIE:',
       '- Scrivi in italiano accademico: formale, preciso, privo di tono giornalistico o divulgativo.',
       '- Sviluppa il contenuto con progressione argomentativa esplicita: ogni paragrafo aggiunge un tassello teorico nuovo rispetto al precedente.',
-      '- Ogni paragrafo deve contenere almeno un\'affermazione concettuale chiara e la relativa giustificazione teorica.',
+      "- Ogni paragrafo deve contenere almeno un'affermazione concettuale chiara e la relativa giustificazione teorica.",
       '- Evita descrizioni generiche o da manuale scolastico: mantieni taglio critico e analitico.',
       '- Non ripetere definizioni o concetti già trattati nei capitoli precedenti.',
       '- Non inventare fonti, autori, dati, anni di pubblicazione o risultati empirici.',
-      '- Non usare elenchi puntati, markdown, titoli non previsti dall\'indice approvato.',
-      '- Non aprire il capitolo con riepilogo dell\'indice o con meta-commenti sul testo.',
+      "- Non usare elenchi puntati, markdown, titoli non previsti dall'indice approvato.",
+      "- Non aprire il capitolo con riepilogo dell'indice o con meta-commenti sul testo.",
       '- Non chiudere con formule scolastiche come "in conclusione" o anticipazioni del capitolo successivo.',
       '- Dove opportuno inserisci rimandi numerati nel testo con formato [1], [2], [3] — massimo 3-6 per capitolo — solo per passaggi che richiedono una precisazione concettuale o metodologica.',
       '- Restituisci solo il testo del capitolo, completo e utilizzabile.',
@@ -432,11 +432,11 @@ ${sections}` : '',
       'REGOLE OBBLIGATORIE:',
       '- Ogni osservazione del relatore va applicata in modo riconoscibile e non cosmetico: il miglioramento deve essere visibile nel testo.',
       '- Non ignorare nessuna richiesta specifica, anche se richiede riscrittura parziale di un paragrafo.',
-      '- Se un\'osservazione è ambigua, applicala nel modo più coerente con titolo, abstract e indice approvati.',
+      "- Se un'osservazione è ambigua, applicala nel modo più coerente con titolo, abstract e indice approvati.",
       '- Se sono forniti estratti da integrare, usali come materiale reale da incorporare nel ragionamento — non inventare fonti aggiuntive.',
       '- Se sono indicati autori o teorie, rendili visibili nel testo in modo generale e coerente con la disciplina, senza inventare citazioni puntuali.',
       '- Se sono indicate parti specifiche da modificare, intervieni su quelle con priorità.',
-      '- Conserva struttura, titoli e ordine del capitolo esistente: non aggiungere sezioni non previste dall\'indice.',
+      "- Conserva struttura, titoli e ordine del capitolo esistente: non aggiungere sezioni non previste dall'indice.",
       '- Mantieni tono accademico, prudente e metodologicamente coerente con la disciplina.',
       '- Non inventare fonti, dati o riferimenti bibliografici non forniti.',
       '- Non accorciare il capitolo salvo richiesta esplicita del relatore.',
@@ -498,7 +498,7 @@ export function buildDisciplinaryWritingGuidance(thesis) {
 
   let profile = '';
   if (has(['comunicazione', 'media', 'sociologia', 'giornal', 'digitale', 'cultural'])) {
-    profile = 'Imposta l\'argomentazione su media, pratiche discorsive, frame interpretativi, piattaforme, pubblico e visibilità; collega ogni passaggio al contesto socioculturale evitando generalizzazioni astratte.';
+    profile = "Imposta l'argomentazione su media, pratiche discorsive, frame interpretativi, piattaforme, pubblico e visibilità; collega ogni passaggio al contesto socioculturale evitando generalizzazioni astratte.";
   } else if (has(['psicologia', 'cognitiv', 'neurosc', 'comportament'])) {
     profile = 'Distingui chiaramente costrutti, modelli teorici e processi cognitivi/comportamentali; formula inferenze caute ed evita diagnosi o affermazioni cliniche non supportate.';
   } else if (has(['economia', 'management', 'aziendal', 'impresa', 'finance', 'mercato'])) {
@@ -522,7 +522,7 @@ export function buildDisciplinaryWritingGuidance(thesis) {
   } else if (has(['biologia', 'chimica', 'fisica', 'scienze natural', 'geologia', 'ambient'])) {
     profile = 'Mantieni rigore scientifico: distingui ipotesi, metodi, risultati e interpretazioni; esplicita livello di certezza, limiti sperimentali e portata delle conclusioni; evita affermazioni causali non supportate da evidenza.';
   } else if (faculty || course || methodology) {
-    profile = 'Mantieni un\'impostazione accademica disciplinata: definizioni operative, argomentazione progressiva, nessi logici espliciti, cautele inferenziali e lessico coerente con l\'area di studio.';
+    profile = "Mantieni un'impostazione accademica disciplinata: definizioni operative, argomentazione progressiva, nessi logici espliciti, cautele inferenziali e lessico coerente con l'area di studio.";
   }
 
   return profile ? `${profile}${methodHint}`.trim() : '';
@@ -565,8 +565,8 @@ function methodLabel(method) {
   const map = {
     Teorica: 'teorica',
     Comparativa: 'comparativa',
-    'Caso studio': 'basata su caso studio',
-    'Revisione sistematica': 'di revisione della letteratura',
+    "Caso studio': 'basata su caso studio",
+    "Revisione sistematica': 'di revisione della letteratura",
     Personalizzato: 'con approccio personalizzato'
   };
   return map[method] || 'teorica';
