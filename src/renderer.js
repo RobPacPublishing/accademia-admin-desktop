@@ -1503,12 +1503,12 @@ document.getElementById('chapter-generate-btn').addEventListener('click', () => 
     if (includeNotes && finalText && !/\nNote\s*\n/i.test(finalText)) {
       try {
         const notesPrompt = buildChapterNotes(thesis, finalText);
-        const notesResult = await callTaskApi('chapter_notes', { prompt: notesPrompt }, getRuntimeState().settings, { timeoutMs: 30000 });
+        const notesResult = await callTaskApi('chapter_draft', { prompt: notesPrompt }, getRuntimeState().settings, { timeoutMs: 30000 });
         const notesText = notesResult?.text || notesResult?.result || '';
         if (notesText) finalText = `${finalText.trim()}\n\n${notesText.trim()}`;
       } catch (_) { /* se le note falliscono non bloccare il capitolo */ }
     }
-    if (workspaceEls.chapterContent) workspaceEls.chapterContent.value = finalText;
+    if (chapterContentEl) chapterContentEl.value = finalText;
     applyChapterToThesis(thesis, thesis.currentChapterIndex, finalText, 'Capitolo generato');
   },
   { toast: 'Capitolo generato.', doneLabel: 'Capitolo generato con successo.', eventMessage: 'Generato capitolo tesi', statusLabel: 'Generazione capitolo in corso', initialDetail: 'Richiesta capitolo inviata. Il provider può impiegare più tempo rispetto a indice e abstract.', successDetail: 'Capitolo ricevuto, salvato e pronto per revisioni o export.' }
@@ -1552,26 +1552,27 @@ document.getElementById('chapter-tutor-submit-btn').addEventListener('click', ()
 });
 
 document.getElementById('chapter-notes-btn').addEventListener('click', () => {
-  const chapterContent = workspaceEls.chapterContent?.value?.trim();
+  const chapterContent = chapterContentEl?.value?.trim();
   if (!chapterContent) return showToast('Genera prima il capitolo.', true);
   runTask(
-    'chapter_notes',
+    'chapter_draft',
     (thesis) => buildChapterNotes(thesis, chapterContent),
     (thesis, text) => {
-      const current = workspaceEls.chapterContent?.value || '';
+      const current = chapterContentEl?.value || '';
       const cleaned = current.replace(/\nNote\s*\n[\s\S]*$/i, '').trim();
-      if (workspaceEls.chapterContent) workspaceEls.chapterContent.value = `${cleaned}\n\n${text}`;
-      applyChapterToThesis(thesis, thesis.currentChapterIndex, workspaceEls.chapterContent?.value || '', 'Note aggiunte');
+      const newText = `${cleaned}\n\n${text}`;
+      if (chapterContentEl) chapterContentEl.value = newText;
+      applyChapterToThesis(thesis, thesis.currentChapterIndex, newText, 'Note aggiunte');
     },
     { toast: 'Sezione Note generata.', doneLabel: 'Note aggiunte al capitolo.', eventMessage: 'Note capitolo generate', statusLabel: 'Generazione sezione Note in corso', initialDetail: 'Generazione apparato note…' }
   );
 });
 
 document.getElementById('chapter-harmonize-btn').addEventListener('click', () => {
-  const chapterContent = workspaceEls.chapterContent?.value?.trim();
+  const chapterContent = chapterContentEl?.value?.trim();
   if (!chapterContent) return showToast('Nessun testo da armonizzare.', true);
   runTask(
-    'chapter_harmonize_light',
+    'chapter_draft',
     (thesis) => [
       'TASK: chapter_harmonize_light',
       `CAPITOLO: ${thesis.chapterTitles?.[thesis.currentChapterIndex] || 'Capitolo'}`,
@@ -1582,7 +1583,7 @@ document.getElementById('chapter-harmonize-btn').addEventListener('click', () =>
       `TESTO ATTUALE:\n${chapterContent.slice(0, 9000)}`,
     ].join('\n\n'),
     (thesis, text) => {
-      if (workspaceEls.chapterContent) workspaceEls.chapterContent.value = text;
+      if (chapterContentEl) chapterContentEl.value = text;
       applyChapterToThesis(thesis, thesis.currentChapterIndex, text, 'Armonizzazione applicata');
     },
     { toast: 'Capitolo armonizzato.', doneLabel: 'Armonizzazione completata.', eventMessage: 'Capitolo armonizzato', statusLabel: 'Armonizzazione in corso', initialDetail: 'Uniformazione stile e transizioni…' }
