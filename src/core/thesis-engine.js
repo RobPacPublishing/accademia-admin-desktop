@@ -371,6 +371,62 @@ export function promptAbstractRevision(thesis, notes) {
   ].filter(Boolean).join('\n\n');
 }
 
+export function promptChapterOpening(thesis, chapterIndex) {
+  const title = thesis.chapterTitles[chapterIndex] || thesis.chapters?.[chapterIndex]?.title || `Capitolo ${chapterIndex + 1}`;
+  const expectedSubsections = getExpectedSubsections(thesis.outline, chapterIndex);
+  const disciplinary = buildDisciplinaryWritingGuidance(thesis);
+  return [
+    'TASK: chapter_opening',
+    `CAPITOLO: ${title}`,
+    `CONTESTO ACCADEMICO\nFacolta': ${thesis.faculty}\nCorso: ${thesis.course}\nTipo laurea: ${thesis.degreeType}\nMetodologia: ${thesis.method}`,
+    `ARGOMENTO: ${thesis.topic}`,
+    thesis.notes ? `ISTRUZIONI OPERATIVE:\n${thesis.notes}` : '',
+    `INDICE APPROVATO:\n${thesis.outline}`,
+    thesis.abstract ? `ABSTRACT APPROVATO:\n${thesis.abstract}` : '',
+    disciplinary ? `PROFILO DISCIPLINARE:\n${disciplinary}` : '',
+    expectedSubsections.length ? `SOTTOSEZIONI DEL CAPITOLO:\n${expectedSubsections.join('\n')}` : '',
+    [
+      'REGOLE OBBLIGATORIE:',
+      'Scrivi SOLO il paragrafo introduttivo del capitolo, che precede la prima sottosezione.',
+      'Il paragrafo deve contestualizzare il capitolo nel quadro generale della tesi, anticipare la logica argomentativa e giustificare la struttura delle sottosezioni senza descriverle una per una.',
+      'Lunghezza: 150-250 parole. Tono accademico, nessuna formula scolastica come "in questo capitolo si analizzeranno".',
+      'Non includere titoli, sottotitoli o intestazioni.',
+      'Non iniziare con il titolo del capitolo.',
+      'Restituisci solo il testo del paragrafo introduttivo.',
+    ].join('\n'),
+  ].filter(Boolean).join('\n\n');
+}
+
+export function promptChapterSubsection(thesis, chapterIndex, subsection, subsectionIndex, totalSubsections, previousText) {
+  const chapterTitle = thesis.chapterTitles[chapterIndex] || thesis.chapters?.[chapterIndex]?.title || `Capitolo ${chapterIndex + 1}`;
+  const disciplinary = buildDisciplinaryWritingGuidance(thesis);
+  const isFirst = subsectionIndex === 0;
+  const isLast = subsectionIndex === totalSubsections - 1;
+  return [
+    'TASK: chapter_subsection',
+    `CAPITOLO: ${chapterTitle}`,
+    `SOTTOSEZIONE DA SVILUPPARE: ${subsection}`,
+    `POSIZIONE: ${subsectionIndex + 1} di ${totalSubsections}`,
+    `CONTESTO ACCADEMICO\nFacolta': ${thesis.faculty}\nCorso: ${thesis.course}\nTipo laurea: ${thesis.degreeType}\nMetodologia: ${thesis.method}`,
+    `ARGOMENTO: ${thesis.topic}`,
+    thesis.notes ? `ISTRUZIONI OPERATIVE:\n${thesis.notes}` : '',
+    disciplinary ? `PROFILO DISCIPLINARE:\n${disciplinary}` : '',
+    previousText ? `TESTO GIA' GENERATO (non ripetere, mantieni continuita'):\n${previousText.slice(-1500)}` : '',
+    [
+      'REGOLE OBBLIGATORIE:',
+      `Inizia esattamente con il titolo della sottosezione: ${subsection}`,
+      'Sviluppa SOLO questa sottosezione, completa e autonoma.',
+      'Lunghezza: 400-700 parole. Tono accademico, taglio critico-analitico.',
+      'Progressione argomentativa esplicita: ogni paragrafo aggiunge un tassello teorico nuovo.',
+      isFirst ? 'Questa e\' la prima sottosezione: non ripetere il paragrafo introduttivo del capitolo.' : 'Non riaprire il ragionamento dall\'inizio: prosegui con continuita\' da quanto gia\' sviluppato.',
+      isLast ? 'Questa e\' l\'ultima sottosezione: chiudi con una micro-sintesi critica che prepara la transizione al capitolo successivo, senza formule come "in conclusione".' : 'Chiudi con una micro-sintesi critica (limite, implicazione o conseguenza teorica), senza anticipare la sottosezione successiva.',
+      'Non inventare fonti, autori, anni o dati empirici.',
+      'Dove opportuno inserisci rimandi numerati [1][2][3] - massimo 2 per sottosezione.',
+      'Nessun elenco puntato, nessun markdown non richiesto.',
+    ].join('\n'),
+  ].filter(Boolean).join('\n\n');
+}
+
 export function promptChapter(thesis, chapterIndex) {
   const title = thesis.chapterTitles[chapterIndex] || thesis.chapters?.[chapterIndex]?.title || `Capitolo ${chapterIndex + 1}`;
   const expectedSubsections = getExpectedSubsections(thesis.outline, chapterIndex);

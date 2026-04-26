@@ -17,7 +17,10 @@ import {
   promptChapter,
   promptChapterRevision,
   promptTutorRevision,
-  buildChapterNotes
+  buildChapterNotes,
+  promptChapterOpening,
+  promptChapterSubsection,
+  getExpectedSubsections
 } from './core/thesis-engine.js';
 import { loadAdminState, saveAdminState, copyText, saveAdminExportFile, buildThesisExportBaseName, exportThesisDocx, exportThesisPdf } from './services/storage-service.js';
 import { callTaskApi, testApiConnection } from './services/provider-service.js';
@@ -487,6 +490,10 @@ async function finishOperation(message, mode = 'success', detail = '') {
     pendingAutosaveAfterOperation = false;
     scheduleAutosave();
   }
+}
+
+function updateOperationDetail(detail) {
+  logStatus(detail, 'busy', '');
 }
 
 function appendEvent(type, message, payload = {}) {
@@ -1494,25 +1501,75 @@ document.getElementById('abstract-review-submit-btn').addEventListener('click', 
   );
 });
 
-document.getElementById('chapter-generate-btn').addEventListener('click', () => runTask(
-  'chapter_draft',
-  (thesis) => promptChapter(thesis, thesis.currentChapterIndex),
-  async (thesis, text) => {
-    let finalText = text;
-    const includeNotes = chapterIncludeNotesEl?.checked !== false;
-    if (includeNotes && finalText && !/\nNote\s*\n/i.test(finalText)) {
-      try {
-        const notesPrompt = buildChapterNotes(thesis, finalText);
-        const notesResult = await callTaskApi('chapter_draft', { prompt: notesPrompt }, getRuntimeState().settings, { timeoutMs: 30000 });
-        const notesText = notesResult?.text || notesResult?.result || '';
-        if (notesText) finalText = `${finalText.trim()}\n\n${notesText.trim()}`;
-      } catch (_) { /* se le note falliscono non bloccare il capitolo */ }
+document.getElementById('chapter-generate-btn').addEventListener('click', async () => {
+  const thesis = getCurrentThesis();
+  if (!thesis) { showToast('Apri prima una tesi.', true); return; }
+  try {
+    ensureWritableChapter(thesis);
+    const chapterIndex = thesis.currentChapterIndex;
+    const subsections = getExpectedSubsections(thesis.outline, chapterIndex);
+    const started = await startOperation('Generazione capitolo in corso', 'Connessione al provider in corso…', 'chapter_draft');
+    if (!started) return;
+
+    let fullText = '';
+    const settings = getRuntimeState().settings;
+    const timeout = getTaskTimeout('chapter_draft');
+
+    // Step 1: paragrafo introduttivo
+    await updateOperationDetail('Generazione paragrafo introduttivo…');
+    const openingPrompt = promptChapterOpening(thesis, chapterIndex);
+    const openingInput = buildStructuredTaskInput(thesis, 'chapter_draft', openingPrompt, { chapterIndex });
+    const openingResult = await callTaskApi('chapter_draft', openingInput, settings, { timeoutMs: timeout });
+    fullText = (openingResult.text || '').trim();
+
+    // Step 2: sottosezioni una per una
+    if (subsections.length) {
+      for (let i = 0; i < subsections.length; i++) {
+        const sub = subsections[i];
+        await updateOperationDetail(`Generazione ${sub}… (${i + 1}/${subsections.length})`);
+        const subPrompt = promptChapterSubsection(thesis, chapterIndex, sub, i, subsections.length, fullText);
+        const subInput = buildStructuredTaskInput(thesis, 'chapter_draft', subPrompt, { chapterIndex });
+        const subResult = await callTaskApi('chapter_draft', subInput, settings, { timeoutMs: timeout });
+        const subText = (subResult.text || '').trim();
+        if (subText) fullText = `${fullText}\n\n${subText}`;
+      }
+    } else {
+      // Nessuna sottosezione nell'indice: genera in blocco unico
+      await updateOperationDetail('Generazione corpo del capitolo…');
+      const bodyPrompt = promptChapter(thesis, chapterIndex);
+      const bodyInput = buildStructuredTaskInput(thesis, 'chapter_draft', bodyPrompt, { chapterIndex });
+      const bodyResult = await callTaskApi('chapter_draft', bodyInput, settings, { timeoutMs: timeout });
+      fullText = (bodyResult.text || '').trim();
     }
-    if (chapterContentEl) chapterContentEl.value = finalText;
-    applyChapterToThesis(thesis, thesis.currentChapterIndex, finalText, 'Capitolo generato');
-  },
-  { toast: 'Capitolo generato.', doneLabel: 'Capitolo generato con successo.', eventMessage: 'Generato capitolo tesi', statusLabel: 'Generazione capitolo in corso', initialDetail: 'Richiesta capitolo inviata. Il provider può impiegare più tempo rispetto a indice e abstract.', successDetail: 'Capitolo ricevuto, salvato e pronto per revisioni o export.' }
-));
+
+    // Step 3: note (se attive)
+    const includeNotes = chapterIncludeNotesEl?.checked !== false;
+    if (includeNotes && fullText && !/\nNote\s*\n/i.test(fullText)) {
+      try {
+        await updateOperationDetail('Generazione sezione Note…');
+        const notesPrompt = buildChapterNotes(thesis, fullText);
+        const notesInput = buildStructuredTaskInput(thesis, 'chapter_draft', notesPrompt, { chapterIndex });
+        const notesResult = await callTaskApi('chapter_draft', notesInput, settings, { timeoutMs: 40000 });
+        const notesText = (notesResult.text || '').trim();
+        if (notesText) fullText = `${fullText}\n\n${notesText}`;
+      } catch (_) { /* note opzionali, non bloccare */ }
+    }
+
+    if (chapterContentEl) chapterContentEl.value = fullText;
+    applyChapterToThesis(thesis, chapterIndex, fullText, 'Capitolo generato');
+    await persistState('saved');
+    renderWorkspace();
+    renderThesisList();
+    appendEvent('generation', 'Generato capitolo tesi', { thesisId: thesis.id, task: 'chapter_draft' });
+    await finishOperation('Capitolo generato con successo.', 'success', 'Capitolo ricevuto, salvato e pronto per revisioni o export.');
+    showToast('Capitolo generato.');
+  } catch (error) {
+    const detail = error.message || 'Errore generazione capitolo.';
+    appendEvent('generation_error', 'Errore generazione capitolo', { thesisId: thesis?.id, error: detail });
+    await finishOperation('Errore generazione', 'error', detail);
+    showToast(detail, true);
+  }
+});
 
 document.getElementById('chapter-review-submit-btn').addEventListener('click', () => {
   const notes = chapterReviewNotesEl.value.trim();
