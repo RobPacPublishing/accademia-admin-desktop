@@ -311,7 +311,7 @@ export function promptChapter(thesis, chapterIndex) {
 ${expectedSubsections.join('
 ')}
 Sviluppa tutte le sottosezioni con continuità, senza fermarti a metà.`
-    : 'Se l’indice suggerisce sottosezioni implicite del capitolo, sviluppale tutte in modo coerente.';
+    : 'Se l\'indice suggerisce sottosezioni implicite del capitolo, sviluppale tutte in modo coerente.';
   const prevSummary = summarizePreviousChapters(thesis, chapterIndex);
   return [
     'TASK: chapter_draft',
@@ -335,12 +335,12 @@ ${prevSummary}` : '',
       'REGOLE OBBLIGATORIE:',
       '- Scrivi in italiano accademico: formale, preciso, privo di tono giornalistico o divulgativo.',
       '- Sviluppa il contenuto con progressione argomentativa esplicita: ogni paragrafo aggiunge un tassello teorico nuovo rispetto al precedente.',
-      '- Ogni paragrafo deve contenere almeno un’affermazione concettuale chiara e la relativa giustificazione teorica.',
+      '- Ogni paragrafo deve contenere almeno un\'affermazione concettuale chiara e la relativa giustificazione teorica.',
       '- Evita descrizioni generiche o da manuale scolastico: mantieni taglio critico e analitico.',
       '- Non ripetere definizioni o concetti già trattati nei capitoli precedenti.',
       '- Non inventare fonti, autori, dati, anni di pubblicazione o risultati empirici.',
-      '- Non usare elenchi puntati, markdown, titoli non previsti dall’indice approvato.',
-      '- Non aprire il capitolo con riepilogo dell’indice o con meta-commenti sul testo.',
+      '- Non usare elenchi puntati, markdown, titoli non previsti dall\'indice approvato.',
+      '- Non aprire il capitolo con riepilogo dell\'indice o con meta-commenti sul testo.',
       '- Non chiudere con formule scolastiche come "in conclusione" o anticipazioni del capitolo successivo.',
       '- Dove opportuno inserisci rimandi numerati nel testo con formato [1], [2], [3] — massimo 3-6 per capitolo — solo per passaggi che richiedono una precisazione concettuale o metodologica.',
       '- Restituisci solo il testo del capitolo, completo e utilizzabile.',
@@ -356,7 +356,7 @@ export function promptChapterRevision(thesis, chapterIndex, notes) {
   const chapterContent = thesis.chapters?.[chapterIndex]?.content || '';
   const expectedSubsections = getExpectedSubsections(thesis.outline, chapterIndex);
   const subsectionBlock = expectedSubsections.length
-    ? `Mantieni le sottosezioni previste dall’indice: ${expectedSubsections.join('; ')}.`
+    ? `Mantieni le sottosezioni previste dall\'indice: ${expectedSubsections.join('; ')}.`
     : '';
   return [
     'TASK: chapter_review',
@@ -432,11 +432,11 @@ ${sections}` : '',
       'REGOLE OBBLIGATORIE:',
       '- Ogni osservazione del relatore va applicata in modo riconoscibile e non cosmetico: il miglioramento deve essere visibile nel testo.',
       '- Non ignorare nessuna richiesta specifica, anche se richiede riscrittura parziale di un paragrafo.',
-      '- Se un’osservazione è ambigua, applicala nel modo più coerente con titolo, abstract e indice approvati.',
+      '- Se un\'osservazione è ambigua, applicala nel modo più coerente con titolo, abstract e indice approvati.',
       '- Se sono forniti estratti da integrare, usali come materiale reale da incorporare nel ragionamento — non inventare fonti aggiuntive.',
       '- Se sono indicati autori o teorie, rendili visibili nel testo in modo generale e coerente con la disciplina, senza inventare citazioni puntuali.',
       '- Se sono indicate parti specifiche da modificare, intervieni su quelle con priorità.',
-      '- Conserva struttura, titoli e ordine del capitolo esistente: non aggiungere sezioni non previste dall’indice.',
+      '- Conserva struttura, titoli e ordine del capitolo esistente: non aggiungere sezioni non previste dall\'indice.',
       '- Mantieni tono accademico, prudente e metodologicamente coerente con la disciplina.',
       '- Non inventare fonti, dati o riferimenti bibliografici non forniti.',
       '- Non accorciare il capitolo salvo richiesta esplicita del relatore.',
@@ -498,7 +498,7 @@ export function buildDisciplinaryWritingGuidance(thesis) {
 
   let profile = '';
   if (has(['comunicazione', 'media', 'sociologia', 'giornal', 'digitale', 'cultural'])) {
-    profile = 'Imposta l’argomentazione su media, pratiche discorsive, frame interpretativi, piattaforme, pubblico e visibilità; collega ogni passaggio al contesto socioculturale evitando generalizzazioni astratte.';
+    profile = 'Imposta l\'argomentazione su media, pratiche discorsive, frame interpretativi, piattaforme, pubblico e visibilità; collega ogni passaggio al contesto socioculturale evitando generalizzazioni astratte.';
   } else if (has(['psicologia', 'cognitiv', 'neurosc', 'comportament'])) {
     profile = 'Distingui chiaramente costrutti, modelli teorici e processi cognitivi/comportamentali; formula inferenze caute ed evita diagnosi o affermazioni cliniche non supportate.';
   } else if (has(['economia', 'management', 'aziendal', 'impresa', 'finance', 'mercato'])) {
@@ -522,7 +522,7 @@ export function buildDisciplinaryWritingGuidance(thesis) {
   } else if (has(['biologia', 'chimica', 'fisica', 'scienze natural', 'geologia', 'ambient'])) {
     profile = 'Mantieni rigore scientifico: distingui ipotesi, metodi, risultati e interpretazioni; esplicita livello di certezza, limiti sperimentali e portata delle conclusioni; evita affermazioni causali non supportate da evidenza.';
   } else if (faculty || course || methodology) {
-    profile = 'Mantieni un’impostazione accademica disciplinata: definizioni operative, argomentazione progressiva, nessi logici espliciti, cautele inferenziali e lessico coerente con l’area di studio.';
+    profile = 'Mantieni un\'impostazione accademica disciplinata: definizioni operative, argomentazione progressiva, nessi logici espliciti, cautele inferenziali e lessico coerente con l\'area di studio.';
   }
 
   return profile ? `${profile}${methodHint}`.trim() : '';
