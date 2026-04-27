@@ -102,12 +102,20 @@ export function ensureChapterCount(thesis, total) {
     });
   }
 
-  thesis.chapters = thesis.chapters.slice(0, total).map((chapter, index) => ({
-    ...chapter,
-    id: chapter.id || `${thesis.id}-chapter-${index + 1}`,
-    title: thesis.chapterTitles[index] || chapter.title || `Capitolo ${index + 1}`,
-    versions: Array.isArray(chapter.versions) ? chapter.versions : []
-  }));
+  thesis.chapters = thesis.chapters.slice(0, total).map((chapter, index) => {
+    const fromTitles = thesis.chapterTitles[index];
+    const isGeneric = (t) => !t || /^Capitolo\s+\d+$/i.test(String(t).trim());
+    // Priorità: chapterTitles reale > chapter.title reale > generico
+    const title = !isGeneric(fromTitles) ? fromTitles
+      : !isGeneric(chapter.title) ? chapter.title
+      : `Capitolo ${index + 1}`;
+    return {
+      ...chapter,
+      id: chapter.id || `${thesis.id}-chapter-${index + 1}`,
+      title,
+      versions: Array.isArray(chapter.versions) ? chapter.versions : []
+    };
+  });
 
   thesis.currentChapterIndex = Math.min(thesis.currentChapterIndex || 0, Math.max(total - 1, 0));
   touchThesis(thesis);
@@ -134,6 +142,15 @@ export function applyOutlineToThesis(thesis, outlineText, label = 'Indice genera
     thesis.chapters = thesis.chapters.map((chapter, index) => ({
       ...chapter,
       title: titles[index] || chapter.title || `Capitolo ${index + 1}`
+    }));
+  } else {
+    // Nessun titolo estratto col formato standard: aggiorna comunque i chapter.title
+    // dai chapterTitles esistenti se non sono generici
+    thesis.chapters = thesis.chapters.map((chapter, index) => ({
+      ...chapter,
+      title: (thesis.chapterTitles[index] && !/^Capitolo\s+\d+$/i.test(thesis.chapterTitles[index]))
+        ? thesis.chapterTitles[index]
+        : chapter.title || `Capitolo ${index + 1}`
     }));
   }
   touchThesis(thesis);
@@ -212,7 +229,7 @@ export function buildStructuredTaskInput(thesis, taskName, prompt, extra = {}) {
     approvedChapters: (thesis.chapters || []).filter((chapter) => String(chapter.content || '').trim()).map((chapter) => ({ title: chapter.title, content: String(chapter.content || '').slice(0, 400) + '…' })),
     previousChapters: summarizePreviousChapters(thesis, chapterIndex),
     currentChapterIndex: chapterIndex,
-    currentChapterTitle: parseChapterTitles(thesis.outline || '')[chapterIndex] || chapterTitles[chapterIndex] || thesis.chapters?.[chapterIndex]?.title || `Capitolo ${chapterIndex + 1}`,
+    currentChapterTitle: resolveChapterTitle(thesis, chapterIndex),
     expectedSubsections,
     constraints: {
       noInventedSources: true,
@@ -223,6 +240,25 @@ export function buildStructuredTaskInput(thesis, taskName, prompt, extra = {}) {
     },
     extra
   };
+}
+
+// Restituisce il titolo reale del capitolo, dando priorità all'indice approvato.
+// Evita titoli generici ("Capitolo N") che causano heading errato nelle Note.
+export function resolveChapterTitle(thesis, chapterIndex) {
+  const fromOutline = parseChapterTitles(thesis.outline || '')[chapterIndex];
+  if (fromOutline && !/^Capitolo\s+\d+$/i.test(fromOutline.trim())) return fromOutline;
+  const fromTitles = Array.isArray(thesis.chapterTitles) ? thesis.chapterTitles[chapterIndex] : null;
+  if (fromTitles && !/^Capitolo\s+\d+$/i.test(String(fromTitles).trim())) return fromTitles;
+  const fromChapter = thesis.chapters?.[chapterIndex]?.title;
+  if (fromChapter && !/^Capitolo\s+\d+$/i.test(String(fromChapter).trim())) return fromChapter;
+  // Ultimo fallback: tenta di riestrarre dall'outline con regex più larga (formato "Capitolo N — Titolo")
+  const outlineLines = String(thesis.outline || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const n = chapterIndex + 1;
+  for (const line of outlineLines) {
+    const m = line.match(new RegExp(`^(?:capitolo\\s+)?${n}[.\\s—\\-:]\\s*(.+)$`, 'i'));
+    if (m && m[1] && !/^Capitolo\s+\d+$/i.test(m[1].trim())) return m[1].trim();
+  }
+  return `Capitolo ${n}`;
 }
 
 export function buildDisciplinaryWritingGuidance(thesis) {

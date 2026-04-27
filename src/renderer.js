@@ -21,7 +21,8 @@ import {
   promptChapterOpening,
   promptChapterSubsection,
   getExpectedSubsections,
-  parseChapterTitles
+  parseChapterTitles,
+  resolveChapterTitle
 } from './core/thesis-engine.js';
 import { loadAdminState, saveAdminState, copyText, saveAdminExportFile, buildThesisExportBaseName, exportThesisDocx, exportThesisPdf } from './services/storage-service.js';
 import { callTaskApi, testApiConnection } from './services/provider-service.js';
@@ -168,6 +169,7 @@ const abstractReviewNotesEl = document.getElementById('abstract-review-notes');
 const chapterReviewNotesEl = document.getElementById('chapter-review-notes');
 const chapterTutorNotesEl = document.getElementById('chapter-tutor-notes');
 const chapterIncludeNotesEl = document.getElementById('chapter-include-notes');
+const chapterIncludeOpeningEl = document.getElementById('chapter-include-opening');
 
 
 function hasOption(selectEl, value) {
@@ -926,7 +928,8 @@ function renderChapterSelect(thesis) {
   thesis.chapters.forEach((chapter, index) => {
     const option = document.createElement('option');
     option.value = String(index);
-    option.textContent = `Capitolo ${index + 1} — ${chapter.title || `Capitolo ${index + 1}`}`;
+    const realTitle = resolveChapterTitle(thesis, index);
+    option.textContent = `Capitolo ${index + 1} — ${realTitle}`;
     if (index === thesis.currentChapterIndex) option.selected = true;
     chapterSelectEl.appendChild(option);
   });
@@ -1030,9 +1033,21 @@ function saveWorkspaceFieldsToState(options = {}) {
   ensureChapterCount(thesis, Math.max(thesis.chapters.length, thesis.chapterTitles.length || 1));
   const currentChapter = thesis.chapters[thesis.currentChapterIndex];
   if (currentChapter) {
-    currentChapter.title = chapterTitleEl.value;
     currentChapter.content = chapterContentEl.value;
-    thesis.chapterTitles[thesis.currentChapterIndex] = chapterTitleEl.value || currentChapter.title;
+    // Aggiorna il titolo SOLO se il campo contiene un valore non generico.
+    // Evita di sovrascrivere titoli reali con "Capitolo N" quando il campo
+    // viene re-renderizzato prima che l'utente abbia digitato qualcosa.
+    const fieldTitle = chapterTitleEl.value.trim();
+    const isGenericTitle = /^Capitolo\s+\d+$/i.test(fieldTitle);
+    if (fieldTitle && !isGenericTitle) {
+      currentChapter.title = fieldTitle;
+      thesis.chapterTitles[thesis.currentChapterIndex] = fieldTitle;
+    } else if (!fieldTitle) {
+      // Campo vuoto: mantieni il titolo già memorizzato, non cancellarlo
+      chapterTitleEl.value = currentChapter.title || '';
+    }
+    // Se il titolo è generico, non aggiornare: l'indice approvato ha già
+    // impostato un titolo reale tramite applyOutlineToThesis.
   }
   thesis.updatedAt = new Date().toISOString();
   renderThesisList();
@@ -1542,6 +1557,7 @@ document.getElementById('chapter-generate-btn').addEventListener('click', async 
     // Stato sezioni - gestito server-side come nel frontend online
     let chapterSections = {};
     let fullText = (thesis.chapters?.[chapterIndex]?.content || '').trim();
+    let chapterOpeningText = ''; // paragrafo introduttivo pre-loop
     let iterCount = 0;
     const MAX_ITER = 12;
 
@@ -1552,6 +1568,24 @@ document.getElementById('chapter-generate-btn').addEventListener('click', async 
       statusLogEl.innerHTML = `<strong>Generazione capitolo in corso</strong><div class="status-detail" style="white-space:pre-line;font-size:12px">${logLines.join('\n')}</div>`;
     };
     renderLog();
+
+    // Paragrafo introduttivo opzionale (prima del loop sottosezioni)
+    const includeOpening = chapterIncludeOpeningEl?.checked === true;
+    if (includeOpening && !fullText && subsections.length) {
+      try {
+        logStatus('Generazione paragrafo introduttivo…', 'busy', '');
+        const openingPrompt = promptChapterOpening(thesis, chapterIndex);
+        const openingInput = buildStructuredTaskInput(thesis, 'chapter_draft', openingPrompt, { chapterIndex });
+        const openingResult = await callTaskApi('chapter_draft', openingInput, settings, { timeoutMs: 35000 });
+        const openingText = (openingResult.text || '').trim();
+        if (openingText) {
+          // Salva nell'extra per passarlo al backend nel loop
+          fullText = ''; // il testo opening non viene messo in fullText direttamente
+          // viene passato come extra.chapterOpening al backend
+          chapterOpeningText = openingText;
+        }
+      } catch (_) { /* opening opzionale, non blocca */ }
+    }
 
     while (iterCount < MAX_ITER) {
       iterCount++;
@@ -1571,6 +1605,10 @@ document.getElementById('chapter-generate-btn').addEventListener('click', async 
       input.existingChapterContent = fullText;
       input.generationMode = fullText ? 'resume' : 'fresh';
       input.chapterSections = chapterSections;
+      // Passa il paragrafo introduttivo al backend (usato da initializeChapterSectionsState)
+      if (chapterOpeningText) {
+        input.extra = { ...(input.extra || {}), chapterIndex, chapterOpening: chapterOpeningText };
+      }
 
       const result = await callTaskApi('chapter_draft', input, settings, { timeoutMs: timeout });
 
