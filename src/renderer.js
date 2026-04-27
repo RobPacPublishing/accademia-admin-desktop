@@ -20,7 +20,8 @@ import {
   buildChapterNotes,
   promptChapterOpening,
   promptChapterSubsection,
-  getExpectedSubsections
+  getExpectedSubsections,
+  parseChapterTitles
 } from './core/thesis-engine.js';
 import { loadAdminState, saveAdminState, copyText, saveAdminExportFile, buildThesisExportBaseName, exportThesisDocx, exportThesisPdf } from './services/storage-service.js';
 import { callTaskApi, testApiConnection } from './services/provider-service.js';
@@ -504,6 +505,11 @@ function cleanMarkdown(text) {
     .replace(/^---+$/gm, '')
     .replace(/^___+$/gm, '')
     .replace(/\[(\d+)\]\s*:/g, '$1.')
+    // Rimuovi heading "Capitolo X..." solo se immediatamente prima della sezione Note
+    .replace(/\n+Capitolo\s+\d+[^\n]*\n+(?=Note\b)/gi, '\n\n')
+    // Rimuovi backslash prima dei numeri nelle note (1\. → 1., Note1. → 1.)
+    .replace(/^Note(\d+)\\?\.\s*/gm, '$1. ')
+    .replace(/^(\d+)\\(\.\s)/gm, '$1$2')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
@@ -928,17 +934,24 @@ function renderChapterSelect(thesis) {
 
 function renderCurrentChapter(thesis) {
   const chapter = thesis.chapters[thesis.currentChapterIndex] || null;
+  const approveBtn = document.getElementById('chapter-approve-btn');
   if (!chapter) {
     chapterTitleEl.value = '';
     chapterContentEl.value = '';
     renderVersionSelect(chapterVersionSelectEl, []);
     renderVersionMeta(chapterVersionMetaEl, []);
+    if (approveBtn) approveBtn.classList.add('hidden');
     return;
   }
   chapterTitleEl.value = chapter.title || '';
   chapterContentEl.value = chapter.content || '';
   renderVersionSelect(chapterVersionSelectEl, chapter.versions || []);
   renderVersionMeta(chapterVersionMetaEl, chapter.versions || []);
+  // Mostra approva solo se capitolo ha contenuto e non è l'ultimo
+  const hasContent = !!String(chapter.content || '').trim();
+  const plannedCount = parseChapterTitles(thesis.outline || '').length || (thesis.chapterTitles || []).length || thesis.chapters.length;
+  const isLast = thesis.currentChapterIndex >= plannedCount - 1;
+  if (approveBtn) approveBtn.classList.toggle('hidden', !hasContent || isLast);
 }
 
 
@@ -1519,69 +1532,90 @@ document.getElementById('chapter-generate-btn').addEventListener('click', async 
   try {
     ensureWritableChapter(thesis);
     const chapterIndex = thesis.currentChapterIndex;
-    const subsections = getExpectedSubsections(thesis.outline, chapterIndex);
-    const started = await startOperation('Generazione capitolo in corso', 'Connessione al provider in corso…', 'chapter_draft');
-    if (!started) return;
-
-    let fullText = '';
     const settings = getRuntimeState().settings;
     const timeout = getTaskTimeout('chapter_draft');
+    const includeNotes = chapterIncludeNotesEl?.checked !== false;
 
-    // Step 1: sottosezioni una per una (no opening separato)
-    if (subsections.length) {
-      const chapterTitle = thesis.chapterTitles[chapterIndex] || '';
-      const logLines = subsections.map(s => `⏳ ${s}`);
-      const statusEl = document.getElementById('status-log');
+    const started = await startOperation('Generazione capitolo in corso', 'Connessione al provider…', 'chapter_draft');
+    if (!started) return;
 
-      const renderLog = () => {
-        if (statusEl) statusEl.innerHTML = `<strong>Generazione capitolo in corso</strong><div class="status-detail" style="white-space:pre-line">${logLines.join('\n')}</div>`;
-      };
+    // Stato sezioni - gestito server-side come nel frontend online
+    let chapterSections = {};
+    let fullText = (thesis.chapters?.[chapterIndex]?.content || '').trim();
+    let iterCount = 0;
+    const MAX_ITER = 12;
 
-      renderLog();
+    const subsections = getExpectedSubsections(thesis.outline, chapterIndex);
+    const logLines = subsections.map(s => `⏳ ${s}`);
+    const renderLog = () => {
+      statusLogEl.classList.add('busy');
+      statusLogEl.innerHTML = `<strong>Generazione capitolo in corso</strong><div class="status-detail" style="white-space:pre-line;font-size:12px">${logLines.join('\n')}</div>`;
+    };
+    renderLog();
 
-      for (let i = 0; i < subsections.length; i++) {
-        const sub = subsections[i];
-        logLines[i] = `⏳ ${sub} (generazione…)`;
-        renderLog();
+    while (iterCount < MAX_ITER) {
+      iterCount++;
 
-        const subPrompt = promptChapterSubsection(thesis, chapterIndex, sub, i, subsections.length, '');
-        const subInput = { prompt: subPrompt, taskName: 'chapter_subsection', adminUnlimitedMode: true };
-        const subResult = await callTaskApi('chapter_subsection', subInput, settings, { timeoutMs: timeout });
-        let subText = (subResult.text || '').trim();
-
-        // Rimuovi titolo capitolo se il modello lo ha incluso spuriamente
-        subText = subText.replace(/^(?:#+\s*)?(?:Capitolo\s+\d+[^\n]*\n+)/i, '').trim();
-        // Rimuovi sezioni Note spurie
-        subText = subText.replace(/\n+(?:---+\s*)?\n*(?:\*{0,2})Note(?:\*{0,2})\s*\n[\s\S]*$/i, '').trim();
-
-        if (subText) fullText = fullText ? `${fullText}\n\n${subText}` : subText;
-
-        logLines[i] = `✓ ${sub}`;
+      // Mostra quale sezione è in corso (prima pending)
+      const pendingBefore = subsections.find((sub, i) => {
+        const code = sub.match(/^(\d+\.\d+)/)?.[1];
+        return code && (!chapterSections[code] || chapterSections[code]?.status === 'pending');
+      });
+      if (pendingBefore) {
+        const pendingIdx = subsections.indexOf(pendingBefore);
+        logLines[pendingIdx] = `⏳ ${pendingBefore} (in corso…)`;
         renderLog();
       }
-    } else {
-      // Nessuna sottosezione nell'indice: genera in blocco unico
-      await updateOperationDetail('Generazione corpo del capitolo…');
-      const bodyPrompt = promptChapter(thesis, chapterIndex);
-      const bodyInput = buildStructuredTaskInput(thesis, 'chapter_draft', bodyPrompt, { chapterIndex });
-      const bodyResult = await callTaskApi('chapter_draft', bodyInput, settings, { timeoutMs: timeout });
-      fullText = (bodyResult.text || '').trim();
-    }
 
-    // Step 2: note (se attive)
-    const includeNotes = chapterIncludeNotesEl?.checked !== false;
-    if (includeNotes && fullText && !/\nNote\s*\n/i.test(fullText)) {
-      try {
-        await updateOperationDetail('Generazione sezione Note…');
-        const notesPrompt = buildChapterNotes(thesis, fullText);
-        const notesInput = buildStructuredTaskInput(thesis, 'chapter_draft', notesPrompt, { chapterIndex });
-        const notesResult = await callTaskApi('chapter_draft', notesInput, settings, { timeoutMs: 40000 });
-        const notesText = cleanMarkdown((notesResult.text || '').trim());
-        if (notesText) fullText = `${fullText}\n\n${notesText}`;
-      } catch (_) { /* note opzionali, non bloccare */ }
+      const input = buildStructuredTaskInput(thesis, 'chapter_draft', '', { chapterIndex });
+      input.existingChapterContent = fullText;
+      input.generationMode = fullText ? 'resume' : 'fresh';
+      input.chapterSections = chapterSections;
+
+      const result = await callTaskApi('chapter_draft', input, settings, { timeoutMs: timeout });
+
+      if (result.sections && typeof result.sections === 'object') {
+        chapterSections = { ...chapterSections, ...result.sections };
+      }
+
+      const newText = (result.text || '').trim();
+      if (newText) {
+        fullText = newText;
+        if (chapterContentEl) chapterContentEl.value = fullText;
+      }
+
+      // Aggiorna log con sezioni completate
+      const doneSections = Object.entries(chapterSections)
+        .filter(([, v]) => v?.status === 'done' || v?.locked)
+        .map(([k]) => k);
+      subsections.forEach((sub, i) => {
+        const code = sub.match(/^(\d+\.\d+)/)?.[1];
+        if (code && doneSections.includes(code)) logLines[i] = `✓ ${sub}`;
+        else if (logLines[i].includes('in corso')) logLines[i] = `⏳ ${sub}`;
+      });
+      renderLog();
+
+      if (result.done) break;
+      if (result.partial === false && !result.done) {
+        // Sottosezione completata ma capitolo non ancora finito — continua
+        continue;
+      }
+      if (result.partial === true) continue; // sezione parziale — riprova
+      break; // fallback sicuro
     }
 
     fullText = cleanMarkdown(fullText);
+
+    // Note finali
+    if (includeNotes && fullText && !/\nNote\s*\n/i.test(fullText)) {
+      try {
+        logStatus('Generazione sezione Note…', 'busy', '');
+        const notesInput = { prompt: buildChapterNotes(thesis, fullText), taskName: 'chapter_draft', adminUnlimitedMode: true };
+        const notesResult = await callTaskApi('chapter_draft', notesInput, settings, { timeoutMs: 40000 });
+        const notesText = cleanMarkdown((notesResult.text || '').trim());
+        if (notesText) fullText = `${fullText}\n\n${notesText}`;
+      } catch (_) { /* note opzionali */ }
+    }
 
     if (chapterContentEl) chapterContentEl.value = fullText;
     applyChapterToThesis(thesis, chapterIndex, fullText, 'Capitolo generato');
@@ -1589,7 +1623,7 @@ document.getElementById('chapter-generate-btn').addEventListener('click', async 
     renderWorkspace();
     renderThesisList();
     appendEvent('generation', 'Generato capitolo tesi', { thesisId: thesis.id, task: 'chapter_draft' });
-    await finishOperation('Capitolo generato con successo.', 'success', 'Capitolo ricevuto, salvato e pronto per revisioni o export.');
+    await finishOperation('Capitolo generato con successo.', 'success', logLines.join('\n'));
     showToast('Capitolo generato.');
   } catch (error) {
     const detail = error.message || 'Errore generazione capitolo.';
@@ -1598,6 +1632,7 @@ document.getElementById('chapter-generate-btn').addEventListener('click', async 
     showToast(detail, true);
   }
 });
+
 
 document.getElementById('chapter-review-submit-btn').addEventListener('click', () => {
   const notes = chapterReviewNotesEl.value.trim();
@@ -1731,6 +1766,7 @@ document.getElementById('outline-save-version-btn').addEventListener('click', ()
   if (!thesis || !outlineEl.value.trim()) return;
   thesis.outline = outlineEl.value;
   thesis.outlineVersions = appendVersion(thesis.outlineVersions, thesis.outline, 'Versione manuale indice');
+  applyOutlineToThesis(thesis, thesis.outline, 'Indice approvato manualmente');
   persistState();
   renderWorkspace();
   showToast('Versione indice salvata.');
@@ -1841,6 +1877,23 @@ document.getElementById('abstract-delete-btn').addEventListener('click', () => {
   renderThesisList();
   appendEvent('abstract_delete', 'Abstract eliminato dal workspace admin', { thesisId: thesis.id });
   showToast('Abstract eliminato.');
+});
+
+document.getElementById('chapter-approve-btn').addEventListener('click', () => {
+  const thesis = getCurrentThesis();
+  if (!thesis) return;
+  const nextIndex = thesis.currentChapterIndex + 1;
+  const plannedCount = parseChapterTitles(thesis.outline || '').length || thesis.chapterTitles.length;
+  if (nextIndex >= plannedCount) {
+    showToast('Tutti i capitoli sono stati completati.');
+    return;
+  }
+  // Assicura che il capitolo successivo esista nell'array
+  ensureChapterCount(thesis, nextIndex + 1);
+  thesis.currentChapterIndex = nextIndex;
+  persistState();
+  renderWorkspace();
+  showToast(`Capitolo ${nextIndex + 1} attivo.`);
 });
 
 document.getElementById('chapter-clear-btn').addEventListener('click', () => {

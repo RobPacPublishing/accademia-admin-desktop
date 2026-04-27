@@ -209,10 +209,10 @@ export function buildStructuredTaskInput(thesis, taskName, prompt, extra = {}) {
     approvedOutline: thesis.outline || '',
     approvedAbstract: thesis.abstract || '',
     chapterTitles,
-    approvedChapters: (thesis.chapters || []).filter((chapter) => String(chapter.content || '').trim()).map((chapter) => ({ title: chapter.title, content: chapter.content })),
+    approvedChapters: (thesis.chapters || []).filter((chapter) => String(chapter.content || '').trim()).map((chapter) => ({ title: chapter.title, content: String(chapter.content || '').slice(0, 400) + '…' })),
     previousChapters: summarizePreviousChapters(thesis, chapterIndex),
     currentChapterIndex: chapterIndex,
-    currentChapterTitle: chapterTitles[chapterIndex] || thesis.chapters?.[chapterIndex]?.title || '',
+    currentChapterTitle: parseChapterTitles(thesis.outline || '')[chapterIndex] || chapterTitles[chapterIndex] || thesis.chapters?.[chapterIndex]?.title || `Capitolo ${chapterIndex + 1}`,
     expectedSubsections,
     constraints: {
       noInventedSources: true,
