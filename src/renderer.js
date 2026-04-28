@@ -338,6 +338,8 @@ function detectRecoveryState() {
 async function persistHeartbeat() {
   const runtime = getRuntimeState();
   runtime.heartbeatAt = new Date().toISOString();
+  // P1.3: salva solo se ci sono modifiche o operazioni pendenti
+  if (!runtime.dirty && !runtime.pendingOperation) return;
   try {
     await saveAdminState(state);
   } catch (_) {

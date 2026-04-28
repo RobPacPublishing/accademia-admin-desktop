@@ -156,7 +156,13 @@ export function normalizeThesisRecord(thesis) {
       ? chapterTitles
       : chapters.map((chapter, index) => chapter.title || `Capitolo ${index + 1}`);
 
-  const normalizedChapters = titles.map((title, index) => {
+  // Usa il massimo tra titoli da outline e capitoli esistenti per non perdere contenuto
+  const totalCount = Math.max(titles.length, chapters.length);
+  const mergedTitles = Array.from({ length: totalCount }, (_, index) =>
+    titles[index] || chapters[index]?.title || `Capitolo ${index + 1}`
+  );
+
+  const normalizedChapters = mergedTitles.map((title, index) => {
     const existing = chapters[index] || normalizeChapterRecord({}, index, item.id || `thesis-${Date.now()}`);
     return {
       ...existing,
@@ -190,7 +196,7 @@ export function normalizeThesisRecord(thesis) {
       : item.abstract
         ? [createVersion(item.abstract, 'Versione iniziale')]
         : [],
-    chapterTitles: titles,
+    chapterTitles: mergedTitles,
     chapters: normalizedChapters,
     currentChapterIndex: Number.isInteger(item.currentChapterIndex) ? item.currentChapterIndex : 0,
     archived: Boolean(item.archived),
