@@ -1653,18 +1653,6 @@ document.getElementById('chapter-generate-btn').addEventListener('click', async 
     }
 
     fullText = cleanMarkdown(fullText);
-    // Rimuovi heading capitolo duplicato (può apparire se postProcessChapterText è chiamato più volte)
-    const expectedHeading = resolveChapterTitle(thesis, chapterIndex);
-    const headingPattern = new RegExp(`(Capitolo\\s+${chapterIndex + 1}[^\\n]*)\\n\\n\\1`, 'i');
-    fullText = fullText.replace(headingPattern, '$1');
-    // Rimuovi anche sottosezione duplicata
-    fullText = fullText.replace(/(
-
-\d+\.\d+\s+[^
-]+
-)([\s\S]*?)
-
-/g, '$1$2');
 
     // Note finali
     if (includeNotes && fullText && !/\nNote\s*\n/i.test(fullText)) {
