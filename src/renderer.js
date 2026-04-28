@@ -1608,6 +1608,7 @@ document.getElementById('chapter-generate-btn').addEventListener('click', async 
       input.existingChapterContent = fullText;
       input.generationMode = fullText ? 'resume' : 'fresh';
       input.chapterSections = chapterSections;
+      input.constraints = { ...(input.constraints || {}), includeFootnotes: includeNotes };
       // Passa il paragrafo introduttivo al backend (usato da initializeChapterSectionsState)
       if (chapterOpeningText) {
         input.extra = { ...(input.extra || {}), chapterIndex, chapterOpening: chapterOpeningText };
@@ -1654,20 +1655,8 @@ document.getElementById('chapter-generate-btn').addEventListener('click', async 
 
     fullText = cleanMarkdown(fullText);
 
-    // Note finali
-    if (includeNotes && fullText && !/\nNote\s*\n/i.test(fullText)) {
-      try {
-        logStatus('Generazione sezione Note…', 'busy', '');
-        const notesInput = buildStructuredTaskInput(thesis, 'chapter_draft', buildChapterNotes(thesis, fullText), { chapterIndex });
-        notesInput.adminUnlimitedMode = true;
-        const notesResult = await callTaskApi('chapter_draft', notesInput, settings, { timeoutMs: 40000 });
-        const notesText = cleanMarkdown((notesResult.text || '').trim());
-        if (notesText) fullText = `${fullText}\n\n${notesText}`;
-      } catch (notesErr) {
-        appendEvent('generation', 'Note non generate (errore opzionale)', { thesisId: thesis.id, error: notesErr?.message });
-        showToast('⚠️ Sezione Note non generata.', false);
-      }
-    }
+    // Note: generate automaticamente dal backend tramite appendChapterNotesIfNeeded
+    // (includeFootnotes: true per default nei constraints — nessuna chiamata separata necessaria)
 
     if (chapterContentEl) chapterContentEl.value = fullText;
     applyChapterToThesis(thesis, chapterIndex, fullText, 'Capitolo generato');
