@@ -1581,8 +1581,9 @@ document.getElementById('chapter-generate-btn').addEventListener('click', async 
         let openingText = (openingResult.text || '').trim();
         if (openingText) {
           // Rimuovi heading capitolo se il backend lo ha aggiunto
-          openingText = openingText.replace(/^Capitolo\s+\d+[^\n]*\n+/i, '').trim();
-          chapterOpeningText = openingText;
+          const openingCleaned = openingText.replace(/^Capitolo\s+\d+[^\n]*\n+/i, '').trim();
+          // Assegna solo se dopo la pulizia il testo è ancora non vuoto
+          if (openingCleaned) chapterOpeningText = openingCleaned;
         }
       } catch (openingErr) {
         appendEvent('generation', 'Paragrafo introduttivo non generato (errore opzionale)', { thesisId: thesis.id, error: openingErr?.message });
