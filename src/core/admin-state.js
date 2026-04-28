@@ -136,14 +136,25 @@ export function normalizeWorkspaceRuntime(rawRuntime) {
 export function normalizeThesisRecord(thesis) {
   const now = new Date().toISOString();
   const item = thesis && typeof thesis === 'object' ? thesis : {};
+  // Ricalcola titoli dall'outline (sorgente autoritativa) per evitare troncamento
+  const outlineLines = String(item.outline || '').split('\n');
+  const titlesFromOutline = outlineLines
+    .map(l => l.trim())
+    .filter(l => /^\d+\.\s+/.test(l))
+    .map(l => l.replace(/^\d+\.\s+/, '').trim())
+    .filter(Boolean);
+
   const chapterTitles = Array.isArray(item.chapterTitles) ? item.chapterTitles.filter(Boolean) : [];
   const chapters = Array.isArray(item.chapters)
     ? item.chapters.map((chapter, index) => normalizeChapterRecord(chapter, index, item.id || `thesis-${Date.now()}`))
     : [];
 
-  const titles = chapterTitles.length
-    ? chapterTitles
-    : chapters.map((chapter, index) => chapter.title || `Capitolo ${index + 1}`);
+  // Priorità: outline > chapterTitles > chapter.title
+  const titles = titlesFromOutline.length
+    ? titlesFromOutline
+    : chapterTitles.length
+      ? chapterTitles
+      : chapters.map((chapter, index) => chapter.title || `Capitolo ${index + 1}`);
 
   const normalizedChapters = titles.map((title, index) => {
     const existing = chapters[index] || normalizeChapterRecord({}, index, item.id || `thesis-${Date.now()}`);
