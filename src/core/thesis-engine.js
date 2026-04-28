@@ -226,7 +226,7 @@ export function buildStructuredTaskInput(thesis, taskName, prompt, extra = {}) {
     approvedOutline: thesis.outline || '',
     approvedAbstract: thesis.abstract || '',
     chapterTitles,
-    approvedChapters: (thesis.chapters || []).filter((chapter) => String(chapter.content || '').trim()).map((chapter) => ({ title: chapter.title, content: String(chapter.content || '').slice(0, 400) + '…' })),
+    approvedChapters: (thesis.chapters || []).filter((chapter) => String(chapter.content || '').trim()).map((chapter) => ({ title: chapter.title, content: String(chapter.content || '').slice(0, 1200) + (String(chapter.content || '').length > 1200 ? '…' : '') })),
     previousChapters: summarizePreviousChapters(thesis, chapterIndex),
     currentChapterIndex: chapterIndex,
     currentChapterTitle: resolveChapterTitle(thesis, chapterIndex),

@@ -36,9 +36,17 @@ function loadFromLocalStorage() {
 function saveToLocalStorage(state) {
   const normalized = normalizeAdminState(state);
   const raw = JSON.stringify(normalized);
-  window.localStorage.setItem(STATE_KEY, raw);
+  try {
+    window.localStorage.setItem(STATE_KEY, raw);
+  } catch (e) {
+    console.warn('AccademIA: localStorage quota superata sulla chiave principale.', e);
+  }
   for (const legacyKey of LEGACY_KEYS) {
-    window.localStorage.setItem(legacyKey, raw);
+    try {
+      window.localStorage.setItem(legacyKey, raw);
+    } catch (_) {
+      // legacy keys opzionali — fallimento silenzioso
+    }
   }
   return raw;
 }
