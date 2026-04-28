@@ -1561,7 +1561,7 @@ document.getElementById('chapter-generate-btn').addEventListener('click', async 
     let fullText = (thesis.chapters?.[chapterIndex]?.content || '').trim();
     let chapterOpeningText = ''; // paragrafo introduttivo pre-loop
     let iterCount = 0;
-    const MAX_ITER = 12;
+    const MAX_ITER = 18;
 
     const subsections = getExpectedSubsections(thesis.outline, chapterIndex);
     const logLines = subsections.map(s => `⏳ ${s}`);
@@ -1578,11 +1578,10 @@ document.getElementById('chapter-generate-btn').addEventListener('click', async 
         logStatus('Generazione paragrafo introduttivo…', 'busy', '');
         const openingInput = buildStructuredTaskInput(thesis, 'chapter_draft', promptChapterOpening(thesis, chapterIndex), { chapterIndex });
         const openingResult = await callTaskApi('chapter_draft', openingInput, settings, { timeoutMs: 35000 });
-        const openingText = (openingResult.text || '').trim();
+        let openingText = (openingResult.text || '').trim();
         if (openingText) {
-          // Salva nell'extra per passarlo al backend nel loop
-          fullText = ''; // il testo opening non viene messo in fullText direttamente
-          // viene passato come extra.chapterOpening al backend
+          // Rimuovi heading capitolo se il backend lo ha aggiunto
+          openingText = openingText.replace(/^Capitolo\s+\d+[^\n]*\n+/i, '').trim();
           chapterOpeningText = openingText;
         }
       } catch (openingErr) {
@@ -1647,7 +1646,7 @@ document.getElementById('chapter-generate-btn').addEventListener('click', async 
     }
 
     // P0.4: verifica completezza dopo loop
-    const loopCompleted = iterCount < 12;
+    const loopCompleted = iterCount < MAX_ITER;
     if (!loopCompleted) {
       appendEvent('generation', 'Capitolo generato parzialmente (MAX_ITER raggiunto)', { thesisId: thesis.id });
       showToast('⚠️ Capitolo generato parzialmente. Premi "Genera capitolo" per continuare.', false);
