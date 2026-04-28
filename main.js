@@ -213,6 +213,18 @@ function createWindow() {
   });
 
   win.loadFile(path.join(__dirname, 'src', 'index.html'));
+
+  // P2.1: CSP restrittiva per renderer
+  win.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [
+          "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://www.accademia-tesi.it https://api.anthropic.com; font-src 'self' data:; object-src 'none'; base-uri 'self'"
+        ]
+      }
+    });
+  });
 }
 
 function escapeHtml(text) {
@@ -446,6 +458,11 @@ function registerIpcHandlers() {
 
   ipcMain.handle('accademia-admin:save-state', async (_event, payload = {}) => {
     try {
+      // P2.3: limite dimensione payload (50MB)
+      const MAX_STATE_SIZE = 50 * 1024 * 1024;
+      if (typeof payload.raw === 'string' && payload.raw.length > MAX_STATE_SIZE) {
+        return { ok: false, error: 'Payload stato troppo grande (>50MB).' };
+      }
       const result = await writeStateFile(payload.raw);
       return result;
     } catch (error) {
