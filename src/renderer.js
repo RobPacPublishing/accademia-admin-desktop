@@ -371,15 +371,8 @@ function setSessionClosedMarker() {
   }
 }
 
-// P0.2: coda di persistenza per evitare write concorrenti
-let _persistQueue = Promise.resolve();
-function enqueuePersist(fn) {
-  _persistQueue = _persistQueue.then(fn).catch(() => {});
-  return _persistQueue;
-}
-
 async function persistState(mode = 'saved') {
-  return enqueuePersist(async () => {
+  try {
     const runtime = getRuntimeState();
     runtime.lastSavedAt = new Date().toISOString();
     runtime.lastClosedAt = null;
@@ -387,19 +380,17 @@ async function persistState(mode = 'saved') {
       runtime.dirty = false;
       runtime.dirtyAt = null;
     }
-    try {
-      await saveAdminState(state);
-      const saveLabel = mode === 'pending' ? 'Salvataggio in corso…' : `Salvato · ${formatCompactDate(runtime.lastSavedAt)}`;
-      setSaveState(saveLabel, mode);
-      renderMetrics();
-      renderRuntimeState();
-    } catch (error) {
-      console.error('Persistenza locale non riuscita:', error);
-      setSaveState('Errore salvataggio', 'error');
-      renderRuntimeState();
-      showToast(error?.message || 'Errore nel salvataggio locale.', true);
-    }
-  });
+    await saveAdminState(state);
+    const saveLabel = mode === 'pending' ? 'Salvataggio in corso…' : `Salvato · ${formatCompactDate(runtime.lastSavedAt)}`;
+    setSaveState(saveLabel, mode);
+    renderMetrics();
+    renderRuntimeState();
+  } catch (error) {
+    console.error('Persistenza locale non riuscita:', error);
+    setSaveState('Errore salvataggio', 'error');
+    renderRuntimeState();
+    showToast(error?.message || 'Errore nel salvataggio locale.', true);
+  }
 }
 
 function setSaveState(message, mode = 'saved') {
@@ -1419,31 +1410,10 @@ async function copyDiagnosticsSummary() {
   showToast(ok ? 'Sintesi diagnostica copiata.' : 'Copia sintesi non riuscita.', !ok);
 }
 
-// P1.2: debounce per sync outline → chapter select
-let _outlineDebounceTimer = null;
-function onOutlineInput() {
-  saveWorkspaceFieldsToState();
-  clearTimeout(_outlineDebounceTimer);
-  _outlineDebounceTimer = setTimeout(() => {
-    const thesis = getCurrentThesis();
-    if (!thesis || !outlineEl.value.trim()) return;
-    const newTitles = parseChapterTitles(outlineEl.value);
-    if (!newTitles.length) return;
-    // Aggiorna titoli senza perdere capitolo corrente
-    const currentIndex = thesis.currentChapterIndex;
-    thesis.chapterTitles = newTitles;
-    thesis.chapters.forEach((ch, i) => { if (newTitles[i]) ch.title = newTitles[i]; });
-    renderChapterSelect(thesis);
-    // Ripristina selezione corrente
-    chapterSelectEl.value = String(currentIndex);
-  }, 600);
-}
-
 function bindWorkspaceAutosave() {
-  [...Object.values(workspaceFields), abstractEl, chapterTitleEl, chapterContentEl, workspaceFacultyCustomEl].forEach((field) => {
+  [...Object.values(workspaceFields), outlineEl, abstractEl, chapterTitleEl, chapterContentEl, workspaceFacultyCustomEl].forEach((field) => {
     field.addEventListener('input', saveWorkspaceFieldsToState);
   });
-  outlineEl.addEventListener('input', onOutlineInput);
   workspaceFacultySelectEl.addEventListener('change', () => {
     toggleCustomFaculty(workspaceFacultySelectEl, workspaceFacultyCustomWrapEl, workspaceFacultyCustomEl);
     saveWorkspaceFieldsToState({ silent: true, immediate: true });
@@ -1606,8 +1576,7 @@ document.getElementById('chapter-generate-btn').addEventListener('click', async 
     if (includeOpening && !fullText && subsections.length) {
       try {
         logStatus('Generazione paragrafo introduttivo…', 'busy', '');
-        const openingPrompt = promptChapterOpening(thesis, chapterIndex);
-        const openingInput = buildStructuredTaskInput(thesis, 'chapter_draft', openingPrompt, { chapterIndex });
+        const openingInput = buildStructuredTaskInput(thesis, 'chapter_draft', promptChapterOpening(thesis, chapterIndex), { chapterIndex });
         const openingResult = await callTaskApi('chapter_draft', openingInput, settings, { timeoutMs: 35000 });
         const openingText = (openingResult.text || '').trim();
         if (openingText) {
@@ -1684,12 +1653,25 @@ document.getElementById('chapter-generate-btn').addEventListener('click', async 
     }
 
     fullText = cleanMarkdown(fullText);
+    // Rimuovi heading capitolo duplicato (può apparire se postProcessChapterText è chiamato più volte)
+    const expectedHeading = resolveChapterTitle(thesis, chapterIndex);
+    const headingPattern = new RegExp(`(Capitolo\\s+${chapterIndex + 1}[^\\n]*)\\n\\n\\1`, 'i');
+    fullText = fullText.replace(headingPattern, '$1');
+    // Rimuovi anche sottosezione duplicata
+    fullText = fullText.replace(/(
+
+\d+\.\d+\s+[^
+]+
+)([\s\S]*?)
+
+/g, '$1$2');
 
     // Note finali
     if (includeNotes && fullText && !/\nNote\s*\n/i.test(fullText)) {
       try {
         logStatus('Generazione sezione Note…', 'busy', '');
-        const notesInput = { prompt: buildChapterNotes(thesis, fullText), taskName: 'chapter_draft', adminUnlimitedMode: true };
+        const notesInput = buildStructuredTaskInput(thesis, 'chapter_draft', buildChapterNotes(thesis, fullText), { chapterIndex });
+        notesInput.adminUnlimitedMode = true;
         const notesResult = await callTaskApi('chapter_draft', notesInput, settings, { timeoutMs: 40000 });
         const notesText = cleanMarkdown((notesResult.text || '').trim());
         if (notesText) fullText = `${fullText}\n\n${notesText}`;
