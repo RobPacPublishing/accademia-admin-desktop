@@ -371,8 +371,15 @@ function setSessionClosedMarker() {
   }
 }
 
+// P0.2: coda di persistenza per evitare write concorrenti
+let _persistQueue = Promise.resolve();
+function enqueuePersist(fn) {
+  _persistQueue = _persistQueue.then(fn).catch(() => {});
+  return _persistQueue;
+}
+
 async function persistState(mode = 'saved') {
-  try {
+  return enqueuePersist(async () => {
     const runtime = getRuntimeState();
     runtime.lastSavedAt = new Date().toISOString();
     runtime.lastClosedAt = null;
@@ -380,17 +387,19 @@ async function persistState(mode = 'saved') {
       runtime.dirty = false;
       runtime.dirtyAt = null;
     }
-    await saveAdminState(state);
-    const saveLabel = mode === 'pending' ? 'Salvataggio in corso…' : `Salvato · ${formatCompactDate(runtime.lastSavedAt)}`;
-    setSaveState(saveLabel, mode);
-    renderMetrics();
-    renderRuntimeState();
-  } catch (error) {
-    console.error('Persistenza locale non riuscita:', error);
-    setSaveState('Errore salvataggio', 'error');
-    renderRuntimeState();
-    showToast(error?.message || 'Errore nel salvataggio locale.', true);
-  }
+    try {
+      await saveAdminState(state);
+      const saveLabel = mode === 'pending' ? 'Salvataggio in corso…' : `Salvato · ${formatCompactDate(runtime.lastSavedAt)}`;
+      setSaveState(saveLabel, mode);
+      renderMetrics();
+      renderRuntimeState();
+    } catch (error) {
+      console.error('Persistenza locale non riuscita:', error);
+      setSaveState('Errore salvataggio', 'error');
+      renderRuntimeState();
+      showToast(error?.message || 'Errore nel salvataggio locale.', true);
+    }
+  });
 }
 
 function setSaveState(message, mode = 'saved') {
@@ -1410,10 +1419,31 @@ async function copyDiagnosticsSummary() {
   showToast(ok ? 'Sintesi diagnostica copiata.' : 'Copia sintesi non riuscita.', !ok);
 }
 
+// P1.2: debounce per sync outline → chapter select
+let _outlineDebounceTimer = null;
+function onOutlineInput() {
+  saveWorkspaceFieldsToState();
+  clearTimeout(_outlineDebounceTimer);
+  _outlineDebounceTimer = setTimeout(() => {
+    const thesis = getCurrentThesis();
+    if (!thesis || !outlineEl.value.trim()) return;
+    const newTitles = parseChapterTitles(outlineEl.value);
+    if (!newTitles.length) return;
+    // Aggiorna titoli senza perdere capitolo corrente
+    const currentIndex = thesis.currentChapterIndex;
+    thesis.chapterTitles = newTitles;
+    thesis.chapters.forEach((ch, i) => { if (newTitles[i]) ch.title = newTitles[i]; });
+    renderChapterSelect(thesis);
+    // Ripristina selezione corrente
+    chapterSelectEl.value = String(currentIndex);
+  }, 600);
+}
+
 function bindWorkspaceAutosave() {
-  [...Object.values(workspaceFields), outlineEl, abstractEl, chapterTitleEl, chapterContentEl, workspaceFacultyCustomEl].forEach((field) => {
+  [...Object.values(workspaceFields), abstractEl, chapterTitleEl, chapterContentEl, workspaceFacultyCustomEl].forEach((field) => {
     field.addEventListener('input', saveWorkspaceFieldsToState);
   });
+  outlineEl.addEventListener('input', onOutlineInput);
   workspaceFacultySelectEl.addEventListener('change', () => {
     toggleCustomFaculty(workspaceFacultySelectEl, workspaceFacultyCustomWrapEl, workspaceFacultyCustomEl);
     saveWorkspaceFieldsToState({ silent: true, immediate: true });
