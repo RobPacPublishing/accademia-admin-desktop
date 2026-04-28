@@ -1547,7 +1547,7 @@ document.getElementById('chapter-generate-btn').addEventListener('click', async 
   try {
     ensureWritableChapter(thesis);
     const chapterIndex = thesis.currentChapterIndex;
-    const settings = getRuntimeState().settings;
+    const settings = state.settings;
     const timeout = getTaskTimeout('chapter_draft');
     const includeNotes = chapterIncludeNotesEl?.checked !== false;
 
@@ -1584,7 +1584,9 @@ document.getElementById('chapter-generate-btn').addEventListener('click', async 
           // viene passato come extra.chapterOpening al backend
           chapterOpeningText = openingText;
         }
-      } catch (_) { /* opening opzionale, non blocca */ }
+      } catch (openingErr) {
+        appendEvent('generation', 'Paragrafo introduttivo non generato (errore opzionale)', { thesisId: thesis.id, error: openingErr?.message });
+      }
     }
 
     while (iterCount < MAX_ITER) {
@@ -1642,6 +1644,13 @@ document.getElementById('chapter-generate-btn').addEventListener('click', async 
       break; // fallback sicuro
     }
 
+    // P0.4: verifica completezza dopo loop
+    const loopCompleted = iterCount < 12;
+    if (!loopCompleted) {
+      appendEvent('generation', 'Capitolo generato parzialmente (MAX_ITER raggiunto)', { thesisId: thesis.id });
+      showToast('⚠️ Capitolo generato parzialmente. Premi "Genera capitolo" per continuare.', false);
+    }
+
     fullText = cleanMarkdown(fullText);
 
     // Note finali
@@ -1652,7 +1661,10 @@ document.getElementById('chapter-generate-btn').addEventListener('click', async 
         const notesResult = await callTaskApi('chapter_draft', notesInput, settings, { timeoutMs: 40000 });
         const notesText = cleanMarkdown((notesResult.text || '').trim());
         if (notesText) fullText = `${fullText}\n\n${notesText}`;
-      } catch (_) { /* note opzionali */ }
+      } catch (notesErr) {
+        appendEvent('generation', 'Note non generate (errore opzionale)', { thesisId: thesis.id, error: notesErr?.message });
+        showToast('⚠️ Sezione Note non generata.', false);
+      }
     }
 
     if (chapterContentEl) chapterContentEl.value = fullText;
