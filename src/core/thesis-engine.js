@@ -548,6 +548,11 @@ export function promptChapterRevision(thesis, chapterIndex, notes) {
       'Elimina formule da AI, chiuse scolastiche e frasi meta come "questo capitolo" o "nel prossimo capitolo".',
       'Non trasformare la revisione in una nuova generazione da zero salvo richiesta esplicita.',
       "Non introdurre argomenti fuori indice e mantieni continuit\u00e0 con abstract e parti gia' approvate.",
+      'Preserva la struttura gia\' presente: introduzione del capitolo, sottopunti numerati 1.1, 1.2, 1.3 ecc. e ordine esistente.',
+      'Non usare marcatori Markdown di nessun tipo: niente #, ##, grassetti, corsivi o heading Markdown.',
+      'Non anteporre # o ## ai titoli dei sottopunti e non trasformare i sottopunti numerati in heading Markdown.',
+      'Non reinserire il titolo del capitolo nel corpo del testo: l\'app lo gestisce separatamente.',
+      'Non duplicare i titoli dei sottopunti e non modificare la struttura del capitolo.',
       'Integra nel corpo del testo, quando opportuno, riferimenti discorsivi prudenti e non inventati: ad esempio "secondo la letteratura sul tema", "secondo il quadro normativo europeo", "in riferimento all\'art. 22 GDPR", "nel quadro dell\'AI Act", "secondo la dottrina prevalente".',
       'Non aggiungere citazioni puntuali, anni, DOI, pagine, bibliografie o riferimenti bibliografici completi se non forniti in input.',
       'Non inventare dati, fonti, autori o riferimenti.',
@@ -733,11 +738,13 @@ export function normalizeChapterForExport(thesis, chapterIndex, chapterText) {
     new RegExp(`^\\s*capitolo\\s+${chapterIndex + 1}\\s*[-:–—]?\\s*${escapeRegex(title)}\\s*\\n+`, 'i'),
     new RegExp(`^\\s*capitolo\\s+${chapterIndex + 1}\\b[^\\n]*\\n+`, 'i'),
     new RegExp(`^\\s*CAPITOLO\\s+${chapterIndex + 1}\\s*[-:–—]?\\s*${escapeRegex(title)}\\s*\\n+`, 'i'),
+    new RegExp(`^\\s*${escapeRegex(title)}\\s*\\n+`, 'i'),
   ];
   let text = String(chapterText || '')
     .replace(/\r\n/g, '\n')
     .replace(/\u00a0/g, ' ')
     .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/^#{1,6}[ \t]+(.+)$/gm, '$1')
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
