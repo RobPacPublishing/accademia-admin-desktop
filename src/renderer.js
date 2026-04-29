@@ -6,6 +6,7 @@ import {
   applyOutlineToThesis,
   applyAbstractToThesis,
   applyChapterToThesis,
+  assertChapterRevisionComplete,
   appendVersion,
   restoreVersion,
   restoreChapterVersion,
@@ -1826,6 +1827,8 @@ document.getElementById('chapter-review-submit-btn').addEventListener('click', (
     'chapter_review',
     (thesis) => promptChapterRevision(thesis, thesis.currentChapterIndex, notes),
     (thesis, text) => {
+      const originalText = thesis.chapters?.[thesis.currentChapterIndex]?.content || '';
+      assertChapterRevisionComplete(originalText, text);
       applyChapterToThesis(thesis, thesis.currentChapterIndex, text, 'Capitolo revisionato', { validationMode: 'progressive' });
       chapterReviewNotesEl.value = '';
       chapterReviewBox.classList.add('hidden');

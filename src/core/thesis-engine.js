@@ -527,8 +527,12 @@ export function promptChapterRevision(thesis, chapterIndex, notes) {
   const title = thesis.chapterTitles[chapterIndex] || thesis.chapters?.[chapterIndex]?.title || `Capitolo ${chapterIndex + 1}`;
   const chapterContent = thesis.chapters?.[chapterIndex]?.content || '';
   const expectedSubsections = getExpectedSubsections(thesis.outline, chapterIndex);
+  const originalSections = extractNumberedSectionCodes(chapterContent);
   const subsectionBlock = expectedSubsections.length
     ? `Mantieni le sottosezioni previste dall'indice: ${expectedSubsections.join('; ')}.`
+    : '';
+  const originalSectionBlock = originalSections.length
+    ? `SEZIONI NUMERATE PRESENTI NEL TESTO ORIGINALE: ${originalSections.join(', ')}. La revisione deve restituirle tutte, nello stesso ordine, senza troncare il capitolo.`
     : '';
   return [
     'TASK: chapter_review',
@@ -539,6 +543,7 @@ export function promptChapterRevision(thesis, chapterIndex, notes) {
     chapterContent ? `TESTO ATTUALE DEL CAPITOLO:\n${chapterContent.slice(0, 6000)}` : '',
     `OSSERVAZIONI:\n${notes}`,
     subsectionBlock,
+    originalSectionBlock,
     [
       'REGOLE OBBLIGATORIE:',
       'Intervieni in modo sostanziale secondo la richiesta: migliora profondit\u00e0 argomentativa, coerenza interna, precisione terminologica e stile.',
@@ -553,6 +558,7 @@ export function promptChapterRevision(thesis, chapterIndex, notes) {
       'Non anteporre # o ## ai titoli dei sottopunti e non trasformare i sottopunti numerati in heading Markdown.',
       'Non reinserire il titolo del capitolo nel corpo del testo: l\'app lo gestisce separatamente.',
       'Non duplicare i titoli dei sottopunti e non modificare la struttura del capitolo.',
+      'Per capitoli lunghi procedi sezione per sezione nel ragionamento, ma restituisci comunque il capitolo intero revisionato: mai un output parziale.',
       'Integra nel corpo del testo, quando opportuno, riferimenti discorsivi prudenti e non inventati: ad esempio "secondo la letteratura sul tema", "secondo il quadro normativo europeo", "in riferimento all\'art. 22 GDPR", "nel quadro dell\'AI Act", "secondo la dottrina prevalente".',
       'Non aggiungere citazioni puntuali, anni, DOI, pagine, bibliografie o riferimenti bibliografici completi se non forniti in input.',
       'Non inventare dati, fonti, autori o riferimenti.',
@@ -625,6 +631,58 @@ export function getExpectedSubsections(outlineText, chapterIndex) {
   const chapterNo = chapterIndex + 1;
   const subsectionRegex = new RegExp(`^${chapterNo}\\.\\d+\\s+`);
   return lines.filter((line) => subsectionRegex.test(line));
+}
+
+
+export function extractNumberedSectionCodes(text) {
+  const codes = [];
+  const seen = new Set();
+  const sectionRegex = /^\s*#{0,6}\s*(\d+\.\d+)\b/gm;
+  let match;
+  while ((match = sectionRegex.exec(String(text || ''))) !== null) {
+    const code = match[1];
+    if (!seen.has(code)) {
+      seen.add(code);
+      codes.push(code);
+    }
+  }
+  return codes;
+}
+
+export function validateChapterRevisionCompleteness(originalText, revisedText, options = {}) {
+  const normalizedOriginal = String(originalText || '').replace(/\r\n/g, '\n').trim();
+  const normalizedRevised = String(revisedText || '').replace(/\r\n/g, '\n').trim();
+  const minLengthRatio = Number(options.minLengthRatio || 0.78);
+  const originalSections = extractNumberedSectionCodes(normalizedOriginal);
+  const revisedSections = extractNumberedSectionCodes(normalizedRevised);
+  const revisedSet = new Set(revisedSections);
+  const missingSections = originalSections.filter((code) => !revisedSet.has(code));
+  const originalLength = normalizedOriginal.length;
+  const revisedLength = normalizedRevised.length;
+  const lengthRatio = originalLength > 0 ? revisedLength / originalLength : 1;
+  const suspiciousEnding = endsSuspiciously(normalizedRevised) || endsWithTruncatedSentence(normalizedRevised);
+  const valid = !!normalizedRevised
+    && missingSections.length === 0
+    && lengthRatio >= minLengthRatio
+    && !suspiciousEnding;
+  return {
+    valid,
+    originalSections,
+    revisedSections,
+    missingSections,
+    originalLength,
+    revisedLength,
+    lengthRatio,
+    suspiciousEnding,
+  };
+}
+
+export function assertChapterRevisionComplete(originalText, revisedText, options = {}) {
+  const validation = validateChapterRevisionCompleteness(originalText, revisedText, options);
+  if (!validation.valid) {
+    throw new Error('Revisione incompleta: il provider ha restituito solo una parte del capitolo. Il testo originale \u00e8 stato conservato.');
+  }
+  return validation;
 }
 
 export function assertChapterCompleteness(thesis, chapterIndex, chapterText, options = {}) {
@@ -852,6 +910,23 @@ function endsSuspiciously(text) {
   const s = String(text || '').trim();
   if (!s) return true;
   return /(?:\b(?:e|ed|o|oppure|ma|perche|perchÃ©|poiche|poichÃ©|mentre|quando|dove|come|con|senza|tra|fra|di|a|da|in|su|per)\s*$|[:;,\-–—]\s*$|\b(?:infatti|inoltre|tuttavia|pertanto|quindi)\s*$)$/i.test(s);
+}
+
+
+function endsWithTruncatedSentence(text) {
+  const s = String(text || '').trim();
+  if (!s) return true;
+  if (!/[.!?)]$/.test(s)) return true;
+  const lastLine = s.split(/\n+/).map((line) => line.trim()).filter(Boolean).pop() || '';
+  const lastLineWords = lastLine.match(/[\p{L}\p{N}]+/gu) || [];
+  if (lastLineWords.length <= 2) return true;
+  if (lastLineWords.length <= 4 && /^(il|lo|la|i|gli|le|un|uno|una|questo|questa|tale|simile)\b/i.test(lastLine)) return true;
+  const sentences = s.match(/[^.!?]+[.!?)]/g) || [];
+  const last = (sentences[sentences.length - 1] || s).trim();
+  const words = last.match(/[\p{L}\p{N}]+/gu) || [];
+  if (words.length <= 2) return true;
+  if (words.length <= 4 && /^(il|lo|la|i|gli|le|un|uno|una|questo|questa|tale|simile)\b/i.test(last)) return true;
+  return false;
 }
 
 function hasArtificialAcademicClosure(text) {
