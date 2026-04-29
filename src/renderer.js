@@ -22,6 +22,7 @@ import {
   promptChapterOpening,
   promptChapterSubsection,
   getExpectedSubsections,
+  analyzeChapterCompleteness,
   parseChapterTitles,
   resolveChapterTitle,
   getThesisCompletionReport,
@@ -1140,6 +1141,44 @@ function buildExportReadiness(thesis) {
   return getThesisCompletionReport(thesis);
 }
 
+function buildProgressiveChapterSections(thesis, chapterIndex, chapterText) {
+  const validation = analyzeChapterCompleteness(thesis, chapterIndex, chapterText);
+  const invalidCodes = new Set([
+    ...validation.shortSubsections.map((item) => item.code),
+    ...validation.substantialParagraphIssues.map((item) => item.code),
+  ]);
+  return Object.fromEntries(validation.presentSubsections.map((item) => [
+    item.code,
+    { status: invalidCodes.has(item.code) ? 'pending' : 'done', locked: !invalidCodes.has(item.code) }
+  ]));
+}
+
+function buildProgressiveChapterStatus(thesis, chapterIndex, chapterText) {
+  const validation = analyzeChapterCompleteness(thesis, chapterIndex, chapterText);
+  if (validation.complete) {
+    return {
+      message: 'Capitolo generato con successo.',
+      detail: 'Tutte le sottosezioni previste risultano complete.'
+    };
+  }
+
+  const lastPoint = validation.presentSubsections.at(-1)?.code || null;
+  const nextPoint = validation.missingSubsections[0]?.code || null;
+  if (nextPoint) {
+    return {
+      message: lastPoint
+        ? `Punto ${lastPoint} generato. Prossimo punto da generare: ${nextPoint}.`
+        : `Prossimo punto da generare: ${nextPoint}.`,
+      detail: `Bozza parziale salvata. Mancano ancora: ${validation.missingSubsections.map((item) => item.code).join(', ')}.`
+    };
+  }
+
+  return {
+    message: 'Capitolo salvato come bozza parziale.',
+    detail: 'Il capitolo richiede ancora controlli qualitativi prima di essere considerato completo.'
+  };
+}
+
 function buildExportStatusBlock(report) {
   if (report.complete) return 'STATO DOCUMENTO\nTesi completa secondo i controlli desktop.\n';
   return [
@@ -1306,7 +1345,10 @@ async function runFinalGlobalRevision() {
     return;
   }
   const report = buildExportReadiness(thesis);
-  if (!report.complete && !window.confirm(`La tesi non risulta completa.\n\n${report.issues.slice(0, 8).join('\n')}\n\nVuoi comunque applicare una revisione finale sui capitoli disponibili?`)) {
+  if (!report.complete) {
+    const detail = `La revisione finale globale richiede una tesi completa.\n\n${report.issues.slice(0, 8).join('\n')}`;
+    appendEvent('generation_error', 'Revisione finale globale bloccata: tesi incompleta', { thesisId: thesis.id, issues: report.issues });
+    showToast(detail, true);
     return;
   }
 
@@ -1658,8 +1700,8 @@ document.getElementById('chapter-generate-btn').addEventListener('click', async 
     if (!started) return;
 
     // Stato sezioni - gestito server-side come nel frontend online
-    let chapterSections = {};
     let fullText = (thesis.chapters?.[chapterIndex]?.content || '').trim();
+    let chapterSections = buildProgressiveChapterSections(thesis, chapterIndex, fullText);
     let chapterOpeningText = ''; // paragrafo introduttivo pre-loop
     let iterCount = 0;
     const MAX_ITER = 18;
@@ -1760,13 +1802,14 @@ document.getElementById('chapter-generate-btn').addEventListener('click', async 
     // (includeFootnotes: true per default nei constraints — nessuna chiamata separata necessaria)
 
     if (chapterContentEl) chapterContentEl.value = fullText;
-    applyChapterToThesis(thesis, chapterIndex, fullText, 'Capitolo generato');
+    applyChapterToThesis(thesis, chapterIndex, fullText, 'Capitolo generato', { validationMode: 'progressive' });
+    const progressStatus = buildProgressiveChapterStatus(thesis, chapterIndex, fullText);
     await persistState('saved');
     renderWorkspace();
     renderThesisList();
     appendEvent('generation', 'Generato capitolo tesi', { thesisId: thesis.id, task: 'chapter_draft' });
-    await finishOperation('Capitolo generato con successo.', 'success', logLines.join('\n'));
-    showToast('Capitolo generato.');
+    await finishOperation(progressStatus.message, 'success', `${progressStatus.detail}\n\n${logLines.join('\n')}`);
+    showToast(progressStatus.message);
   } catch (error) {
     const detail = error.message || 'Errore generazione capitolo.';
     appendEvent('generation_error', 'Errore generazione capitolo', { thesisId: thesis?.id, error: detail });
@@ -1783,7 +1826,7 @@ document.getElementById('chapter-review-submit-btn').addEventListener('click', (
     'chapter_review',
     (thesis) => promptChapterRevision(thesis, thesis.currentChapterIndex, notes),
     (thesis, text) => {
-      applyChapterToThesis(thesis, thesis.currentChapterIndex, text, 'Capitolo revisionato');
+      applyChapterToThesis(thesis, thesis.currentChapterIndex, text, 'Capitolo revisionato', { validationMode: 'progressive' });
       chapterReviewNotesEl.value = '';
       chapterReviewBox.classList.add('hidden');
     },
@@ -1802,7 +1845,7 @@ document.getElementById('chapter-tutor-submit-btn').addEventListener('click', ()
     'tutor_revision',
     (thesis) => promptTutorRevision(thesis, thesis.currentChapterIndex, tutorInput),
     (thesis, text) => {
-      applyChapterToThesis(thesis, thesis.currentChapterIndex, text, 'Osservazioni relatore applicate');
+      applyChapterToThesis(thesis, thesis.currentChapterIndex, text, 'Osservazioni relatore applicate', { validationMode: 'progressive' });
       chapterTutorNotesEl.value = '';
       ['chapter-tutor-extracts', 'chapter-tutor-authors', 'chapter-tutor-sections'].forEach(id => {
         const el = document.getElementById(id); if (el) el.value = '';
@@ -1824,7 +1867,7 @@ document.getElementById('chapter-notes-btn').addEventListener('click', () => {
       const cleaned = current.replace(/\nNote\s*\n[\s\S]*$/i, '').trim();
       const newText = `${cleaned}\n\n${text}`;
       if (chapterContentEl) chapterContentEl.value = newText;
-      applyChapterToThesis(thesis, thesis.currentChapterIndex, newText, 'Note aggiunte');
+      applyChapterToThesis(thesis, thesis.currentChapterIndex, newText, 'Note aggiunte', { validationMode: 'progressive' });
     },
     { toast: 'Sezione Note generata.', doneLabel: 'Note aggiunte al capitolo.', eventMessage: 'Note capitolo generate', statusLabel: 'Generazione sezione Note in corso', initialDetail: 'Generazione apparato note…' }
   );
@@ -1846,7 +1889,7 @@ document.getElementById('chapter-harmonize-btn').addEventListener('click', () =>
     ].join('\n\n'),
     (thesis, text) => {
       if (chapterContentEl) chapterContentEl.value = text;
-      applyChapterToThesis(thesis, thesis.currentChapterIndex, text, 'Armonizzazione applicata');
+      applyChapterToThesis(thesis, thesis.currentChapterIndex, text, 'Armonizzazione applicata', { validationMode: 'progressive' });
     },
     { toast: 'Capitolo armonizzato.', doneLabel: 'Armonizzazione completata.', eventMessage: 'Capitolo armonizzato', statusLabel: 'Armonizzazione in corso', initialDetail: 'Uniformazione stile e transizioni…' }
   );

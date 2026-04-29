@@ -169,10 +169,13 @@ export function applyAbstractToThesis(thesis, abstractText, label = 'Abstract ge
   return thesis;
 }
 
-export function applyChapterToThesis(thesis, chapterIndex, chapterText, label = 'Capitolo generato') {
+export function applyChapterToThesis(thesis, chapterIndex, chapterText, label = 'Capitolo generato', options = {}) {
   ensureChapterCount(thesis, Math.max(thesis.chapters.length, chapterIndex + 1));
   const cleaned = normalizeChapterForExport(thesis, chapterIndex, chapterText);
-  assertChapterCompleteness(thesis, chapterIndex, cleaned);
+  const validationMode = options?.validationMode || 'complete';
+  assertChapterCompleteness(thesis, chapterIndex, cleaned, {
+    allowMissingFutureSubsections: validationMode === 'progressive'
+  });
   const chapter = thesis.chapters[chapterIndex];
   chapter.content = cleaned;
   chapter.title = thesis.chapterTitles[chapterIndex] || chapter.title || `Capitolo ${chapterIndex + 1}`;
@@ -606,10 +609,11 @@ export function getExpectedSubsections(outlineText, chapterIndex) {
   return lines.filter((line) => subsectionRegex.test(line));
 }
 
-export function assertChapterCompleteness(thesis, chapterIndex, chapterText) {
+export function assertChapterCompleteness(thesis, chapterIndex, chapterText, options = {}) {
   const validation = analyzeChapterCompleteness(thesis, chapterIndex, chapterText);
+  const allowMissingFutureSubsections = options?.allowMissingFutureSubsections === true;
   if (!validation.hasText) throw new Error('Capitolo vuoto: il provider non ha restituito contenuto utilizzabile.');
-  if (validation.missingSubsections.length) {
+  if (!allowMissingFutureSubsections && validation.missingSubsections.length) {
     throw new Error(`Capitolo incompleto: mancano sottosezioni previste (${validation.missingSubsections.map((item) => item.code).join(', ')}).`);
   }
   if (validation.shortSubsections.length) {
@@ -618,7 +622,8 @@ export function assertChapterCompleteness(thesis, chapterIndex, chapterText) {
   if (validation.substantialParagraphIssues.length) {
     throw new Error(`Capitolo incompleto: paragrafi sostanziali insufficienti (${validation.substantialParagraphIssues.map((item) => `${item.code}: ${item.paragraphs}`).join(', ')}).`);
   }
-  if (validation.words < validation.minWords) {
+  const shouldCheckChapterWordFloor = !allowMissingFutureSubsections || !validation.expectedSubsections.length;
+  if (shouldCheckChapterWordFloor && validation.words < validation.minWords) {
     throw new Error(`Capitolo troppo breve: ${validation.words} parole, minimo atteso ${validation.minWords}.`);
   }
   if (validation.suspiciousEnding) throw new Error('Capitolo incompleto: chiusura monca o sintatticamente sospetta.');
@@ -631,6 +636,7 @@ export function analyzeChapterCompleteness(thesis, chapterIndex, chapterText) {
   const words = wordCount(text);
   const minWords = chapterWordFloorForValidation(thesis, expectedSubsections.length || 1);
   const missingSubsections = [];
+  const presentSubsections = [];
   const shortSubsections = [];
   const substantialParagraphIssues = [];
 
@@ -642,6 +648,7 @@ export function analyzeChapterCompleteness(thesis, chapterIndex, chapterText) {
       missingSubsections.push({ code, title: line.replace(/^(\d+\.\d+)\s+/, '') });
       continue;
     }
+    presentSubsections.push({ code, title: line.replace(/^(\d+\.\d+)\s+/, '') });
     const sectionWords = countSubsectionBodyWords(sectionText);
     if (sectionWords < CHAPTER_POINT_MIN_WORDS) shortSubsections.push({ code, words: sectionWords });
     const paragraphs = countSubstantialParagraphs(sectionText);
@@ -655,6 +662,7 @@ export function analyzeChapterCompleteness(thesis, chapterIndex, chapterText) {
     words,
     minWords,
     expectedSubsections,
+    presentSubsections,
     missingSubsections,
     shortSubsections,
     substantialParagraphIssues,
