@@ -234,17 +234,52 @@ function normalizeFilenamePart(value, fallback = 'tesi-admin') {
   return normalized || fallback;
 }
 
+function escapeRegex(value) {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function normalizeChapterContentForExport(thesis = {}, chapter = {}, index = 0) {
+  const title = chapter?.title || thesis?.chapterTitles?.[index] || `Capitolo ${index + 1}`;
+  const patterns = [
+    new RegExp(`^\\s*capitolo\\s+${index + 1}\\s*[-:–—]?\\s*${escapeRegex(title)}\\s*\\n+`, 'i'),
+    new RegExp(`^\\s*capitolo\\s+${index + 1}\\b[^\\n]*\\n+`, 'i'),
+    new RegExp(`^\\s*CAPITOLO\\s+${index + 1}\\s*[-:–—]?\\s*${escapeRegex(title)}\\s*\\n+`, 'i'),
+  ];
+  let text = String(chapter?.content || '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\u00a0/g, ' ')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const pattern of patterns) {
+      const next = text.replace(pattern, '').trim();
+      if (next !== text) {
+        text = next;
+        changed = true;
+      }
+    }
+  }
+  return text;
+}
+
 function buildAcademicHtml(thesis = {}) {
   const chapters = Array.isArray(thesis.chapters) ? thesis.chapters : [];
   const outlineHtml = escapeHtml(thesis.outline || '').replace(/\n/g, '<br />');
   const abstractHtml = escapeHtml(thesis.abstract || '').replace(/\n/g, '<br />');
   const topicHtml = escapeHtml(thesis.topic || '').replace(/\n/g, '<br />');
   const notesHtml = escapeHtml(thesis.notes || '').replace(/\n/g, '<br />');
+  const exportStatusHtml = thesis.exportStatus === 'draft'
+    ? '<div class="section-label">Stato documento</div><div class="block"><strong>BOZZA PARZIALE</strong><br />Non presentare come tesi finale consegnabile senza revisione.</div>'
+    : '';
 
   const chaptersHtml = chapters.map((chapter, index) => `
     <section class="chapter-block">
       <h2>Capitolo ${index + 1} — ${escapeHtml(chapter?.title || `Capitolo ${index + 1}`)}</h2>
-      <div class="chapter-text">${escapeHtml(chapter?.content || '').replace(/\n/g, '<br />')}</div>
+      <div class="chapter-text">${escapeHtml(normalizeChapterContentForExport(thesis, chapter, index)).replace(/\n/g, '<br />')}</div>
     </section>
   `).join('\n');
 
@@ -277,6 +312,7 @@ function buildAcademicHtml(thesis = {}) {
     <p class="meta"><strong>Tipo laurea:</strong> ${escapeHtml(thesis.degreeType || '—')}</p>
     <p class="meta"><strong>Metodo:</strong> ${escapeHtml(thesis.method || '—')}</p>
   </section>
+  ${exportStatusHtml}
 
   <div class="section-label">Argomento</div>
   <div class="block">${topicHtml || '—'}</div>
@@ -358,6 +394,11 @@ async function buildDocxBufferFromThesis(thesis = {}) {
   children.push(new Paragraph({ text: 'Abstract', heading: HeadingLevel.HEADING_1, spacing: { before: 320, after: 160 } }));
   children.push(...buildDocxParagraphsFromText(thesis.abstract || '', Paragraph));
 
+  if (thesis.exportStatus === 'draft') {
+    children.push(new Paragraph({ text: 'Stato documento', heading: HeadingLevel.HEADING_1, spacing: { before: 320, after: 160 } }));
+    children.push(...buildDocxParagraphsFromText('BOZZA PARZIALE - non presentare come tesi finale consegnabile senza revisione.', Paragraph));
+  }
+
   const chapters = Array.isArray(thesis.chapters) ? thesis.chapters : [];
   chapters.forEach((chapter, index) => {
     children.push(new Paragraph({
@@ -365,7 +406,7 @@ async function buildDocxBufferFromThesis(thesis = {}) {
       heading: HeadingLevel.HEADING_1,
       spacing: { before: 360, after: 180 }
     }));
-    children.push(...buildDocxParagraphsFromText(chapter?.content || '', Paragraph));
+    children.push(...buildDocxParagraphsFromText(normalizeChapterContentForExport(thesis, chapter, index), Paragraph));
   });
 
   if (thesis.notes) {

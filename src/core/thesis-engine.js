@@ -1,5 +1,10 @@
 import { createVersion } from './admin-state.js';
 
+export const CHAPTER_POINT_MIN_WORDS = 700;
+export const CHAPTER_POINT_TARGET_MIN_WORDS = 800;
+export const CHAPTER_POINT_MAX_WORDS = 1000;
+export const CHAPTER_POINT_MIN_SUBSTANTIAL_PARAGRAPHS = 5;
+
 export function createThesisFromForm(form) {
   return normalizeThesisShape({
     id: crypto.randomUUID(),
@@ -166,7 +171,7 @@ export function applyAbstractToThesis(thesis, abstractText, label = 'Abstract ge
 
 export function applyChapterToThesis(thesis, chapterIndex, chapterText, label = 'Capitolo generato') {
   ensureChapterCount(thesis, Math.max(thesis.chapters.length, chapterIndex + 1));
-  const cleaned = String(chapterText || '').trim();
+  const cleaned = normalizeChapterForExport(thesis, chapterIndex, chapterText);
   assertChapterCompleteness(thesis, chapterIndex, cleaned);
   const chapter = thesis.chapters[chapterIndex];
   chapter.content = cleaned;
@@ -332,8 +337,8 @@ export function buildChapterNotes(thesis, chapterText) {
 export function promptOutline(thesis) {
   const isMagistrale = String(thesis.degreeType || '').toLowerCase().includes('magistral');
   const structureRule = isMagistrale
-    ? 'Proponi 4-6 capitoli con 2-4 sottosezioni per capitolo, impianto analitico-critico.'
-    : 'Proponi 3-4 capitoli con 2-3 sottosezioni per capitolo, impianto essenziale.';
+    ? 'Determina una struttura di 4-6 capitoli con 3-4 sottosezioni per capitolo, impianto analitico-critico e sviluppo non meramente descrittivo.'
+    : 'Determina una struttura di 3-4 capitoli con 3 sottosezioni per capitolo, progressione chiara dall\'inquadramento teorico alle conclusioni.';
   return [
     'TASK: outline_draft',
     `ARGOMENTO: ${thesis.topic}`,
@@ -343,12 +348,14 @@ export function promptOutline(thesis) {
       'REGOLE OBBLIGATORIE:',
       structureRule,
       "Il primo capitolo svolge funzione teorico-fondativa: stato dell'arte, quadro concettuale, definizioni operative.",
+      isMagistrale ? "Per tesi magistrali prevedi un impianto piu' profondo: stato dell'arte, gap o problema teorico e contributo analitico riconoscibile." : '',
       "L'ultimo capitolo chiude con sintesi critica, limiti, implicazioni o prospettive future - mai con un mero riepilogo descrittivo.",
       'Per tesi teoriche o di review non proporre un capitolo metodologico autonomo: integra la metodologia nel primo o secondo capitolo.',
       'I titoli di capitoli e sottosezioni devono essere informativi e specifici: evita titoli generici come "Introduzione al tema" o "Considerazioni finali" senza specificazione di contenuto.',
       "Se la facolta' ha convenzioni strutturali riconoscibili (es. Giurisprudenza: norma - dottrina - giurisprudenza; Psicologia: costrutti - modelli - implicazioni), rispettale.",
+      'Includi solo la struttura della tesi: capitoli e sottosezioni numerati. Non aggiungere commenti, premesse, bibliografia descritta o spiegazioni esterne.',
       'Restituisci solo l\'indice numerato nel formato: "1. Titolo capitolo\\n   1.1 Titolo sottosezione\\n   1.2 Titolo sottosezione\\n2. ..." - nessun testo aggiuntivo prima o dopo.',
-    ].join('\n'),
+    ].filter(Boolean).join('\n'),
   ].filter(Boolean).join('\n\n');
 }
 
@@ -371,7 +378,7 @@ export function promptOutlineRevision(thesis, notes) {
 
 export function promptAbstract(thesis) {
   const isMagistrale = String(thesis.degreeType || '').toLowerCase().includes('magistral');
-  const wordTarget = isMagistrale ? '200-300 parole' : '150-250 parole';
+  const wordTarget = isMagistrale ? '250-300 parole' : '180-220 parole';
   return [
     'TASK: abstract_draft',
     `CONTESTO ACCADEMICO\nFacolt\u00e0: ${thesis.faculty}\nCorso: ${thesis.course}\nTipo laurea: ${thesis.degreeType}\nMetodologia: ${thesis.method}`,
@@ -386,6 +393,8 @@ export function promptAbstract(thesis) {
       'Tono: sintetico, impersonale, al presente o passato prossimo. Evita il futuro ("si analizzer\u00e0", "verranno trattati").',
       'Non inventare risultati o dati: se la tesi è teorica, descrivi il contributo argomentativo.',
       'Non usare formule di apertura banali come "Il presente lavoro si propone di" o "Questa tesi analizza".',
+      'Inserisci una riga vuota prima della formula finale.',
+      'Chiudi andando a capo con: "Parole chiave: [5-7 termini rilevanti separati da virgola]".',
       "Restituisci solo il testo dell'abstract, senza titolo, intestazioni o commenti aggiuntivi.",
     ].join('\n'),
   ].filter(Boolean).join('\n\n');
@@ -455,8 +464,10 @@ export function promptChapterSubsection(thesis, chapterIndex, subsection, subsec
       'NON scrivere il titolo del capitolo prima del titolo della sottosezione.',
       'NON scrivere intestazioni come "Capitolo 1 —" o simili.',
       'Sviluppa SOLO questa sottosezione, completa e autonoma.',
-      'Lunghezza: 400-700 parole. Tono accademico, taglio critico-analitico.',
-      'Progressione argomentativa esplicita: ogni paragrafo aggiunge un tassello teorico nuovo.',
+      `Lunghezza obbligatoria: ${CHAPTER_POINT_TARGET_MIN_WORDS}-${CHAPTER_POINT_MAX_WORDS} parole; minimo assoluto ${CHAPTER_POINT_MIN_WORDS} parole.`,
+      `Struttura minima: almeno ${CHAPTER_POINT_MIN_SUBSTANTIAL_PARAGRAPHS} paragrafi sostanziali, non frammenti brevi.`,
+      'Progressione argomentativa esplicita: ogni paragrafo aggiunge un tassello teorico nuovo e contiene una giustificazione teorica.',
+      'Evita descrizioni generiche o da manuale scolastico: mantieni taglio critico, analitico e tesi-centrico.',
       isFirst ? 'Questa e\' la prima sottosezione: non ripetere il paragrafo introduttivo del capitolo.' : 'Non riaprire il ragionamento dall\'inizio: prosegui con continuita\' da quanto gia\' sviluppato.',
       isLast ? 'Questa e\' l\'ultima sottosezione: chiudi con una micro-sintesi critica che prepara la transizione al capitolo successivo, senza formule come "in conclusione".' : 'Chiudi con una micro-sintesi critica (limite, implicazione o conseguenza teorica), senza anticipare la sottosezione successiva.',
       'Non inventare fonti, autori, anni o dati empirici.',
@@ -489,6 +500,7 @@ export function promptChapter(thesis, chapterIndex) {
     [
       'REGOLE OBBLIGATORIE:',
       'Scrivi in italiano accademico: formale, preciso, privo di tono giornalistico o divulgativo.',
+      `Ogni sottosezione deve tendere a ${CHAPTER_POINT_TARGET_MIN_WORDS}-${CHAPTER_POINT_MAX_WORDS} parole, con minimo assoluto ${CHAPTER_POINT_MIN_WORDS} parole e almeno ${CHAPTER_POINT_MIN_SUBSTANTIAL_PARAGRAPHS} paragrafi sostanziali.`,
       'Sviluppa il contenuto con progressione argomentativa esplicita: ogni paragrafo aggiunge un tassello teorico nuovo rispetto al precedente.',
       "Ogni paragrafo deve contenere almeno un'affermazione concettuale chiara e la relativa giustificazione teorica.",
       'Evita descrizioni generiche o da manuale scolastico: mantieni taglio critico e analitico.',
@@ -523,6 +535,9 @@ export function promptChapterRevision(thesis, chapterIndex, notes) {
       'REGOLE OBBLIGATORIE:',
       'Intervieni in modo sostanziale secondo la richiesta: migliora profondit\u00e0 argomentativa, coerenza interna, precisione terminologica e stile.',
       'Elimina ripetizioni, passaggi generici, frasi deboli o ridondanti.',
+      'Ogni sottosezione deve restare sostanziale: almeno 5 paragrafi pieni quando possibile, progressione teorica esplicita e chiusura argomentativa autonoma.',
+      'Non ridurre la lunghezza del capitolo salvo richiesta esplicita; se il testo e\' debole, amplialo con contenuto analitico coerente anziche\' comprimerlo.',
+      'Elimina formule da AI, chiuse scolastiche e frasi meta come "questo capitolo" o "nel prossimo capitolo".',
       'Non trasformare la revisione in una nuova generazione da zero salvo richiesta esplicita.',
       "Non introdurre argomenti fuori indice e mantieni continuit\u00e0 con abstract e parti gia' approvate.",
       'Non aggiungere citazioni puntuali, anni, pagine o bibliografia se non forniti in input.',
@@ -564,6 +579,11 @@ export function promptTutorRevision(thesis, chapterIndex, tutorInput) {
       'Ogni osservazione del relatore va applicata in modo riconoscibile e non cosmetico: il miglioramento deve essere visibile nel testo.',
       'Non ignorare nessuna richiesta specifica, anche se richiede riscrittura parziale di un paragrafo.',
       "Se un'osservazione e' ambigua, applicala nel modo piu' coerente con titolo, abstract e indice approvati.",
+      'Tratta le osservazioni del relatore come vincolanti e prioritarie: la revisione deve essere sostanziale, riconoscibile e coerente punto per punto con i rilievi ricevuti.',
+      'Ogni sottosezione deve compiere tre funzioni: definire con precisione il concetto, interpretarne il significato teorico, spiegare perche\' e\' rilevante per la domanda di ricerca.',
+      'In ogni sottosezione inserisci almeno un passaggio interpretativo non ovvio e una frase finale che chiarisca il contributo specifico della sezione.',
+      'Quando un passaggio potrebbe valere per qualunque elaborato, rendilo piu\' specifico, tesi-centrico e aderente al fenomeno studiato.',
+      'Aumenta densita\' argomentativa, precisione terminologica, coesione tra paragrafi, gerarchia del ragionamento e qualita\' delle transizioni interne.',
       'Se sono forniti estratti da integrare, usali come materiale reale da incorporare nel ragionamento - non inventare fonti aggiuntive.',
       'Se sono indicati autori o teorie, rendili visibili nel testo in modo generale e coerente con la disciplina, senza inventare citazioni puntuali.',
       'Se sono indicate parti specifiche da modificare, intervieni su quelle con priorita\'.',
@@ -587,25 +607,239 @@ export function getExpectedSubsections(outlineText, chapterIndex) {
 }
 
 export function assertChapterCompleteness(thesis, chapterIndex, chapterText) {
-  const text = String(chapterText || '').trim();
-  if (!text) throw new Error('Capitolo vuoto: il provider non ha restituito contenuto utilizzabile.');
-  if (text.length < 1400) {
-    throw new Error('Capitolo troppo breve o incompleto: risposta non accettata.');
+  const validation = analyzeChapterCompleteness(thesis, chapterIndex, chapterText);
+  if (!validation.hasText) throw new Error('Capitolo vuoto: il provider non ha restituito contenuto utilizzabile.');
+  if (validation.missingSubsections.length) {
+    throw new Error(`Capitolo incompleto: mancano sottosezioni previste (${validation.missingSubsections.map((item) => item.code).join(', ')}).`);
+  }
+  if (validation.shortSubsections.length) {
+    throw new Error(`Capitolo incompleto: sottosezioni troppo brevi (${validation.shortSubsections.map((item) => `${item.code}: ${item.words} parole`).join(', ')}).`);
+  }
+  if (validation.substantialParagraphIssues.length) {
+    throw new Error(`Capitolo incompleto: paragrafi sostanziali insufficienti (${validation.substantialParagraphIssues.map((item) => `${item.code}: ${item.paragraphs}`).join(', ')}).`);
+  }
+  if (validation.words < validation.minWords) {
+    throw new Error(`Capitolo troppo breve: ${validation.words} parole, minimo atteso ${validation.minWords}.`);
+  }
+  if (validation.suspiciousEnding) throw new Error('Capitolo incompleto: chiusura monca o sintatticamente sospetta.');
+  if (validation.artificialClosure) throw new Error('Capitolo incompleto: chiusura artificiale o meta-discorsiva da rifinire.');
+}
+
+export function analyzeChapterCompleteness(thesis, chapterIndex, chapterText) {
+  const text = String(chapterText || '').replace(/\r\n/g, '\n').trim();
+  const expectedSubsections = getExpectedSubsections(thesis?.outline || '', chapterIndex);
+  const words = wordCount(text);
+  const minWords = chapterWordFloorForValidation(thesis, expectedSubsections.length || 1);
+  const missingSubsections = [];
+  const shortSubsections = [];
+  const substantialParagraphIssues = [];
+
+  for (const line of expectedSubsections) {
+    const code = (line.match(/^(\d+\.\d+)/) || [])[1];
+    if (!code) continue;
+    const sectionText = extractSubsectionText(text, expectedSubsections, line);
+    if (!sectionText) {
+      missingSubsections.push({ code, title: line.replace(/^(\d+\.\d+)\s+/, '') });
+      continue;
+    }
+    const sectionWords = countSubsectionBodyWords(sectionText);
+    if (sectionWords < CHAPTER_POINT_MIN_WORDS) shortSubsections.push({ code, words: sectionWords });
+    const paragraphs = countSubstantialParagraphs(sectionText);
+    if (paragraphs < CHAPTER_POINT_MIN_SUBSTANTIAL_PARAGRAPHS) substantialParagraphIssues.push({ code, paragraphs });
   }
 
-  const expectedSubsections = getExpectedSubsections(thesis.outline, chapterIndex);
-  if (expectedSubsections.length >= 2) {
-    const presentMarkers = expectedSubsections.filter((line) => {
-      const marker = (line.match(/^(\d+\.\d+)/) || [])[1];
-      return marker && text.includes(marker);
-    });
+  const suspiciousEnding = endsSuspiciously(text);
+  const artificialClosure = hasArtificialAcademicClosure(text);
+  return {
+    hasText: !!text,
+    words,
+    minWords,
+    expectedSubsections,
+    missingSubsections,
+    shortSubsections,
+    substantialParagraphIssues,
+    suspiciousEnding,
+    artificialClosure,
+    complete: !!text
+      && !missingSubsections.length
+      && !shortSubsections.length
+      && !substantialParagraphIssues.length
+      && words >= minWords
+      && !suspiciousEnding
+      && !artificialClosure,
+  };
+}
 
-    const coverage = presentMarkers.length / expectedSubsections.length;
+export function getThesisCompletionReport(thesis) {
+  const issues = [];
+  if (!String(thesis?.outline || '').trim()) issues.push('Indice mancante.');
+  if (!String(thesis?.abstract || '').trim()) issues.push('Abstract mancante.');
 
-    if (coverage < 0.5 && text.length < 3200) {
-      throw new Error('Capitolo incompleto: copertura insufficiente delle sottosezioni previste.');
+  const expectedTitles = parseChapterTitles(thesis?.outline || '');
+  const plannedCount = expectedTitles.length || thesis?.chapterTitles?.length || 0;
+  const chapters = Array.isArray(thesis?.chapters) ? thesis.chapters : [];
+  if (!plannedCount) issues.push('Numero capitoli non determinabile dall\'indice.');
+  if (plannedCount && chapters.length < plannedCount) issues.push(`Capitoli presenti ${chapters.length}/${plannedCount}.`);
+
+  const chapterReports = [];
+  for (let index = 0; index < plannedCount; index += 1) {
+    const report = analyzeChapterCompleteness(thesis, index, chapters[index]?.content || '');
+    chapterReports.push(report);
+    if (!report.complete) {
+      const parts = [];
+      if (!report.hasText) parts.push('testo mancante');
+      if (report.missingSubsections.length) parts.push(`mancano ${report.missingSubsections.map((item) => item.code).join(', ')}`);
+      if (report.shortSubsections.length) parts.push(`punti brevi ${report.shortSubsections.map((item) => item.code).join(', ')}`);
+      if (report.substantialParagraphIssues.length) parts.push(`paragrafi insufficienti ${report.substantialParagraphIssues.map((item) => item.code).join(', ')}`);
+      if (report.words < report.minWords) parts.push(`${report.words}/${report.minWords} parole`);
+      if (report.suspiciousEnding) parts.push('chiusura monca');
+      if (report.artificialClosure) parts.push('chiusura artificiale');
+      issues.push(`Capitolo ${index + 1}: ${parts.join('; ') || 'non completo'}.`);
     }
   }
+
+  return {
+    complete: issues.length === 0,
+    issues,
+    plannedCount,
+    chapterReports,
+  };
+}
+
+export function normalizeChapterForExport(thesis, chapterIndex, chapterText) {
+  const title = resolveChapterTitle(thesis, chapterIndex);
+  const headingPatterns = [
+    new RegExp(`^\\s*capitolo\\s+${chapterIndex + 1}\\s*[-:–—]?\\s*${escapeRegex(title)}\\s*\\n+`, 'i'),
+    new RegExp(`^\\s*capitolo\\s+${chapterIndex + 1}\\b[^\\n]*\\n+`, 'i'),
+    new RegExp(`^\\s*CAPITOLO\\s+${chapterIndex + 1}\\s*[-:–—]?\\s*${escapeRegex(title)}\\s*\\n+`, 'i'),
+  ];
+  let text = String(chapterText || '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\u00a0/g, ' ')
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const pattern of headingPatterns) {
+      const next = text.replace(pattern, '').trim();
+      if (next !== text) {
+        text = next;
+        changed = true;
+      }
+    }
+  }
+  return stripArtificialAcademicTail(text).trim();
+}
+
+export function prepareThesisForExport(thesis) {
+  const normalized = structuredCloneSafe(thesis || {});
+  const report = getThesisCompletionReport(normalized);
+  normalized.exportStatus = report.complete ? 'complete' : 'draft';
+  normalized.exportIssues = report.issues;
+  normalized.chapters = (Array.isArray(normalized.chapters) ? normalized.chapters : []).map((chapter, index) => ({
+    ...chapter,
+    title: resolveChapterTitle(normalized, index),
+    content: normalizeChapterForExport(normalized, index, chapter?.content || ''),
+  }));
+  return normalized;
+}
+
+export function promptFinalRevision(thesis) {
+  const chapters = Array.isArray(thesis?.chapters) ? thesis.chapters : [];
+  const compactChapters = chapters.map((chapter, index) => {
+    const content = normalizeChapterForExport(thesis, index, chapter?.content || '');
+    return `CAPITOLO ${index + 1} - ${resolveChapterTitle(thesis, index)}\n${content.slice(0, 7000)}`;
+  }).join('\n\n');
+
+  return [
+    'TASK: thesis_final_revision',
+    `ARGOMENTO: ${thesis.topic || thesis.title || ''}`,
+    `CONTESTO ACCADEMICO\nFacolta: ${thesis.faculty || ''}\nCorso: ${thesis.course || ''}\nTipo laurea: ${thesis.degreeType || ''}\nMetodologia: ${thesis.method || ''}`,
+    thesis.notes ? `ISTRUZIONI OPERATIVE / NOTE ADMIN:\n${thesis.notes}` : '',
+    `INDICE APPROVATO:\n${thesis.outline || ''}`,
+    `ABSTRACT APPROVATO:\n${thesis.abstract || ''}`,
+    `CAPITOLI ATTUALI:\n${compactChapters}`,
+    [
+      'REGOLE OBBLIGATORIE:',
+      'Esegui una revisione finale globale leggera ma sostanziale dell\'intera tesi.',
+      'Mantieni titoli, ordine dei capitoli e sottosezioni dell\'indice approvato.',
+      'Migliora continuita\' tra capitoli, stile accademico, precisione terminologica, coerenza disciplinare e profondita\' argomentativa.',
+      'Elimina ripetizioni, formule artificiali, chiuse scolastiche, frasi meta e passaggi generici.',
+      'Non inventare fonti, dati, anni, citazioni puntuali o bibliografia.',
+      'Non accorciare il testo salvo duplicazioni evidenti.',
+      'Restituisci la tesi completa in testo piano, con sezioni: INDICE, ABSTRACT, CAPITOLO 1, CAPITOLO 2, ecc.',
+      'Non aggiungere commenti di servizio prima o dopo il documento.',
+    ].join('\n'),
+  ].filter(Boolean).join('\n\n');
+}
+
+function extractSubsectionText(chapterText, expectedSubsections, subsectionLine) {
+  const code = (String(subsectionLine || '').match(/^(\d+\.\d+)/) || [])[1];
+  if (!code) return '';
+  const startPattern = new RegExp(`(^|\\n)\\s*${escapeRegex(code)}\\s+`, 'm');
+  const startMatch = startPattern.exec(chapterText);
+  if (!startMatch) return '';
+  const start = startMatch.index + (startMatch[1] ? 1 : 0);
+  let end = chapterText.length;
+  for (const other of expectedSubsections) {
+    const otherCode = (String(other || '').match(/^(\d+\.\d+)/) || [])[1];
+    if (!otherCode || otherCode === code) continue;
+    const otherMatch = new RegExp(`(^|\\n)\\s*${escapeRegex(otherCode)}\\s+`, 'm').exec(chapterText.slice(start + 1));
+    if (otherMatch) {
+      const candidateEnd = start + 1 + otherMatch.index + (otherMatch[1] ? 1 : 0);
+      if (candidateEnd > start && candidateEnd < end) end = candidateEnd;
+    }
+  }
+  return chapterText.slice(start, end).trim();
+}
+
+function countSubsectionBodyWords(sectionText) {
+  const body = String(sectionText || '').replace(/^\d+\.\d+\s+[^\n]+\n*/i, '').trim();
+  return wordCount(body);
+}
+
+function countSubstantialParagraphs(sectionText) {
+  const body = String(sectionText || '').replace(/^\d+\.\d+\s+[^\n]+\n*/i, '').trim();
+  if (!body) return 0;
+  return body.split(/\n\s*\n/).map((p) => p.trim()).filter((p) => wordCount(p) >= 45).length;
+}
+
+function chapterWordFloorForValidation(thesis, subsectionCount) {
+  const count = Math.max(1, Number(subsectionCount) || 0);
+  const degree = String(thesis?.degreeType || '').toLowerCase();
+  if (degree.includes('magistrale') && /2|biennale|post/.test(degree)) return Math.max(2600, count * 760);
+  if (degree.includes('magistrale')) return Math.max(2200, count * 680);
+  return Math.max(1800, count * 600);
+}
+
+function wordCount(text) {
+  return String(text || '').trim().split(/\s+/).filter(Boolean).length;
+}
+
+function endsSuspiciously(text) {
+  const s = String(text || '').trim();
+  if (!s) return true;
+  return /(?:\b(?:e|ed|o|oppure|ma|perche|perchÃ©|poiche|poichÃ©|mentre|quando|dove|come|con|senza|tra|fra|di|a|da|in|su|per)\s*$|[:;,\-–—]\s*$|\b(?:infatti|inoltre|tuttavia|pertanto|quindi)\s*$)$/i.test(s);
+}
+
+function hasArtificialAcademicClosure(text) {
+  return /(nel prossimo capitolo|nei capitoli successivi|questo capitolo (ha analizzato|si e' proposto|si Ã¨ proposto|ha mostrato|ha evidenziato)|in conclusione,? questo capitolo)/i.test(String(text || '').slice(-520));
+}
+
+function stripArtificialAcademicTail(text) {
+  return String(text || '')
+    .replace(/\n(?:In conclusione,?\s*)?(?:nel|nei) prossim[oi] capitol[oi][\s\S]*$/i, '')
+    .replace(/\n(?:In conclusione,?\s*)?questo capitolo (?:ha analizzato|si Ã¨ proposto(?: di)?|si e' proposto(?: di)?|ha mostrato|ha evidenziato|ha esaminato|ha consentito di)[\s\S]*$/i, '')
+    .replace(/\n(?:Per concludere|In sintesi|In conclusione),?\s+(?:si puÃ² affermare|si puo' affermare|si puÃ² osservare|si puo' osservare|emerge che|si evidenzia che)[^\n]{0,260}$/i, '')
+    .trim();
+}
+
+function escapeRegex(value) {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function methodLabel(method) {

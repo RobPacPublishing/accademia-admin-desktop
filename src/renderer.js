@@ -17,12 +17,16 @@ import {
   promptChapter,
   promptChapterRevision,
   promptTutorRevision,
+  promptFinalRevision,
   buildChapterNotes,
   promptChapterOpening,
   promptChapterSubsection,
   getExpectedSubsections,
   parseChapterTitles,
-  resolveChapterTitle
+  resolveChapterTitle,
+  getThesisCompletionReport,
+  normalizeChapterForExport,
+  prepareThesisForExport
 } from './core/thesis-engine.js';
 import { loadAdminState, saveAdminState, copyText, saveAdminExportFile, buildThesisExportBaseName, exportThesisDocx, exportThesisPdf } from './services/storage-service.js';
 import { callTaskApi, testApiConnection } from './services/provider-service.js';
@@ -1132,22 +1136,56 @@ function duplicateThesis(id) {
   showToast('Tesi duplicata.');
 }
 
+function buildExportReadiness(thesis) {
+  return getThesisCompletionReport(thesis);
+}
+
+function buildExportStatusBlock(report) {
+  if (report.complete) return 'STATO DOCUMENTO\nTesi completa secondo i controlli desktop.\n';
+  return [
+    'STATO DOCUMENTO',
+    'BOZZA PARZIALE - non presentare come tesi finale consegnabile senza revisione.',
+    '',
+    'Elementi da completare:',
+    ...report.issues.map((issue) => `- ${issue}`),
+    '',
+  ].join('\n');
+}
+
+function confirmDraftExport(format, report) {
+  if (report.complete) return true;
+  const message = [
+    `La tesi non risulta completa per l'export finale ${format}.`,
+    '',
+    report.issues.slice(0, 8).join('\n'),
+    report.issues.length > 8 ? `\n...altri ${report.issues.length - 8} rilievi.` : '',
+    '',
+    'Vuoi esportarla come BOZZA PARZIALE?'
+  ].filter(Boolean).join('\n');
+  return window.confirm(message);
+}
+
 function buildThesisExportPayload(thesis) {
-  const baseName = buildThesisExportBaseName(thesis?.title || 'tesi-admin');
-  const chapters = Array.isArray(thesis?.chapters) ? thesis.chapters : [];
+  const prepared = prepareThesisForExport(thesis);
+  const report = buildExportReadiness(prepared);
+  const statusBlock = buildExportStatusBlock(report);
+  const baseName = `${buildThesisExportBaseName(prepared?.title || 'tesi-admin')}${report.complete ? '' : '-bozza-parziale'}`;
+  const chapters = Array.isArray(prepared?.chapters) ? prepared.chapters : [];
   const text = [
-    thesis?.title || 'Tesi senza titolo',
+    prepared?.title || 'Tesi senza titolo',
     `${thesis?.faculty || '—'} · ${thesis?.course || '—'} · ${thesis?.degreeType || '—'}`,
     `Metodo: ${thesis?.method || '—'}`,
     '',
+    statusBlock,
+    '',
     'ARGOMENTO',
-    thesis?.topic || '',
+    prepared?.topic || '',
     '',
     'INDICE',
-    thesis?.outline || '',
+    prepared?.outline || '',
     '',
     'ABSTRACT',
-    thesis?.abstract || '',
+    prepared?.abstract || '',
     '',
     ...chapters.flatMap((chapter, index) => [`CAPITOLO ${index + 1} — ${chapter?.title || `Capitolo ${index + 1}`}`, chapter?.content || '', ''])
   ].join('\n');
@@ -1155,7 +1193,9 @@ function buildThesisExportPayload(thesis) {
   return {
     baseName,
     text,
-    json: JSON.stringify(thesis, null, 2)
+    prepared,
+    report,
+    json: JSON.stringify({ ...prepared, exportReadiness: report }, null, 2)
   };
 }
 
@@ -1167,7 +1207,12 @@ function buildAcademicHtmlExport(thesis) {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
 
-  const chapters = Array.isArray(thesis?.chapters) ? thesis.chapters : [];
+  const prepared = prepareThesisForExport(thesis);
+  const report = buildExportReadiness(prepared);
+  const statusHtml = report.complete
+    ? '<div class="section-label">Stato documento</div><div class="block">Tesi completa secondo i controlli desktop.</div>'
+    : `<div class="section-label">Stato documento</div><div class="block"><strong>BOZZA PARZIALE</strong><br />Non presentare come tesi finale consegnabile senza revisione.<br /><br />${escapeHtml(report.issues.join('\n')).replace(/\n/g, '<br />')}</div>`;
+  const chapters = Array.isArray(prepared?.chapters) ? prepared.chapters : [];
   const chaptersHtml = chapters.map((chapter, index) => `
 <section class="chapter-block">
   <h2>Capitolo ${index + 1} — ${escapeHtml(chapter?.title || `Capitolo ${index + 1}`)}</h2>
@@ -1204,6 +1249,7 @@ function buildAcademicHtmlExport(thesis) {
     <p class="meta"><strong>Tipo laurea:</strong> ${escapeHtml(thesis?.degreeType || '—')}</p>
     <p class="meta"><strong>Metodo:</strong> ${escapeHtml(thesis?.method || '—')}</p>
   </section>
+  ${statusHtml}
   <div class="section-label">Argomento</div>
   <div class="block">${escapeHtml(thesis?.topic || '').replace(/\n/g, '<br />') || '—'}</div>
   <div class="section-label">Indice</div>
@@ -1224,6 +1270,7 @@ async function exportCurrentThesis() {
   }
   try {
     const payload = buildThesisExportPayload(thesis);
+    if (!confirmDraftExport('TXT', payload.report)) return;
     const result = await saveAdminExportFile({
       raw: payload.text,
       defaultFileName: `${payload.baseName}.txt`,
@@ -1231,10 +1278,60 @@ async function exportCurrentThesis() {
       filters: [{ name: 'Testo', extensions: ['txt'] }]
     });
     if (!result?.ok) return;
-    appendEvent('export', 'Esportata tesi corrente in TXT', { thesisId: thesis.id, format: 'txt', filePath: result.filePath, severity: 'info' });
-    showToast('Tesi esportata in TXT.');
+    appendEvent('export', payload.report.complete ? 'Esportata tesi corrente in TXT' : 'Esportata bozza parziale in TXT', { thesisId: thesis.id, format: 'txt', filePath: result.filePath, complete: payload.report.complete, severity: 'info' });
+    showToast(payload.report.complete ? 'Tesi esportata in TXT.' : 'Bozza parziale esportata in TXT.');
   } catch (error) {
     showToast(error?.message || 'Errore export TXT.', true);
+  }
+}
+
+function buildFinalRevisionChapterPrompt(thesis, chapterIndex) {
+  const globalBrief = promptFinalRevision(thesis).slice(0, 3500);
+  return promptChapterRevision(thesis, chapterIndex, [
+    'REVISIONE FINALE GLOBALE DELLA TESI',
+    'Applica una passata finale sul capitolo corrente mantenendo struttura, titoli e contenuti chiave.',
+    'Allinea stile, transizioni, profondita argomentativa, coerenza disciplinare e continuita con indice, abstract e altri capitoli.',
+    'Non accorciare il capitolo, non inventare fonti, non aggiungere sezioni fuori indice.',
+    'Elimina ripetizioni, formule artificiali, chiuse scolastiche e passaggi generici.',
+    '',
+    'CONTESTO GLOBALE COMPATTO:',
+    globalBrief,
+  ].join('\n'));
+}
+
+async function runFinalGlobalRevision() {
+  const thesis = getCurrentThesis();
+  if (!thesis) {
+    showToast('Apri prima una tesi.', true);
+    return;
+  }
+  const report = buildExportReadiness(thesis);
+  if (!report.complete && !window.confirm(`La tesi non risulta completa.\n\n${report.issues.slice(0, 8).join('\n')}\n\nVuoi comunque applicare una revisione finale sui capitoli disponibili?`)) {
+    return;
+  }
+
+  const chapters = Array.isArray(thesis.chapters) ? thesis.chapters : [];
+  const started = await startOperation('Revisione finale globale in corso', 'Armonizzazione sequenziale dei capitoli disponibili...', 'chapter_review');
+  if (!started) return;
+  try {
+    for (let index = 0; index < chapters.length; index += 1) {
+      if (!String(chapters[index]?.content || '').trim()) continue;
+      thesis.currentChapterIndex = index;
+      updateOperationDetail(`Revisione finale capitolo ${index + 1}/${chapters.length}`);
+      const input = buildStructuredTaskInput(thesis, 'chapter_review', buildFinalRevisionChapterPrompt(thesis, index), { chapterIndex: index });
+      const result = await callTaskApi('chapter_review', input, state.settings, { timeoutMs: getTaskTimeout('chapter_review') });
+      applyChapterToThesis(thesis, index, result.text || '', 'Revisione finale globale');
+    }
+    await persistState('saved');
+    renderWorkspace();
+    renderThesisList();
+    appendEvent('generation', 'Revisione finale globale applicata', { thesisId: thesis.id, chapters: chapters.length });
+    await finishOperation('Revisione finale globale completata.', 'success', 'Capitoli armonizzati con criteri equivalenti alla web.');
+    showToast('Revisione finale globale completata.');
+  } catch (error) {
+    appendEvent('generation_error', 'Errore revisione finale globale', { thesisId: thesis.id, error: error?.message || String(error) });
+    await finishOperation('Errore revisione finale globale', 'error', error?.message || 'Revisione finale interrotta.');
+    showToast(error?.message || 'Errore revisione finale globale.', true);
   }
 }
 
@@ -1246,6 +1343,7 @@ async function exportCurrentThesisHtml() {
   }
   try {
     const payload = buildThesisExportPayload(thesis);
+    if (!confirmDraftExport('HTML', payload.report)) return;
     const html = buildAcademicHtmlExport(thesis);
     const result = await saveAdminExportFile({
       raw: html,
@@ -1255,8 +1353,8 @@ async function exportCurrentThesisHtml() {
       mimeType: 'text/html;charset=utf-8'
     });
     if (!result?.ok) return;
-    appendEvent('export', 'Esportata tesi corrente in HTML', { thesisId: thesis.id, format: 'html', filePath: result.filePath, severity: 'info' });
-    showToast('Tesi esportata in HTML.');
+    appendEvent('export', payload.report.complete ? 'Esportata tesi corrente in HTML' : 'Esportata bozza parziale in HTML', { thesisId: thesis.id, format: 'html', filePath: result.filePath, complete: payload.report.complete, severity: 'info' });
+    showToast(payload.report.complete ? 'Tesi esportata in HTML.' : 'Bozza parziale esportata in HTML.');
   } catch (error) {
     showToast(error?.message || 'Errore export HTML.', true);
   }
@@ -1270,6 +1368,7 @@ async function exportCurrentThesisJson() {
   }
   try {
     const payload = buildThesisExportPayload(thesis);
+    if (!confirmDraftExport('JSON', payload.report)) return;
     const result = await saveAdminExportFile({
       raw: payload.json,
       defaultFileName: `${payload.baseName}.json`,
@@ -1293,10 +1392,11 @@ async function exportCurrentThesisDocx() {
   }
   try {
     const payload = buildThesisExportPayload(thesis);
-    const result = await exportThesisDocx(thesis, `${payload.baseName}.docx`);
+    if (!confirmDraftExport('DOCX', payload.report)) return;
+    const result = await exportThesisDocx(payload.prepared, `${payload.baseName}.docx`);
     if (!result?.ok) return;
-    appendEvent('export', 'Esportata tesi corrente in DOCX', { thesisId: thesis.id, format: 'docx', filePath: result.filePath, severity: 'info' });
-    showToast('Tesi esportata in DOCX.');
+    appendEvent('export', payload.report.complete ? 'Esportata tesi corrente in DOCX' : 'Esportata bozza parziale in DOCX', { thesisId: thesis.id, format: 'docx', filePath: result.filePath, complete: payload.report.complete, severity: 'info' });
+    showToast(payload.report.complete ? 'Tesi esportata in DOCX.' : 'Bozza parziale esportata in DOCX.');
   } catch (error) {
     showToast(error?.message || 'Errore export DOCX.', true);
   }
@@ -1310,11 +1410,12 @@ async function exportCurrentThesisPdf() {
   }
   try {
     const payload = buildThesisExportPayload(thesis);
+    if (!confirmDraftExport('PDF', payload.report)) return;
     const html = buildAcademicHtmlExport(thesis);
     const result = await exportThesisPdf(thesis, html, `${payload.baseName}.pdf`);
     if (!result?.ok) return;
-    appendEvent('export', 'Esportata tesi corrente in PDF', { thesisId: thesis.id, format: 'pdf', filePath: result.filePath, severity: 'info' });
-    showToast('Tesi esportata in PDF.');
+    appendEvent('export', payload.report.complete ? 'Esportata tesi corrente in PDF' : 'Esportata bozza parziale in PDF', { thesisId: thesis.id, format: 'pdf', filePath: result.filePath, complete: payload.report.complete, severity: 'info' });
+    showToast(payload.report.complete ? 'Tesi esportata in PDF.' : 'Bozza parziale esportata in PDF.');
   } catch (error) {
     showToast(error?.message || 'Errore export PDF.', true);
   }
@@ -2009,6 +2110,7 @@ document.getElementById('tool-export-thesis-html-btn').addEventListener('click',
 document.getElementById('tool-export-thesis-json-btn').addEventListener('click', exportCurrentThesisJson);
 document.getElementById('tool-export-thesis-docx-btn').addEventListener('click', exportCurrentThesisDocx);
 document.getElementById('tool-export-thesis-pdf-btn').addEventListener('click', exportCurrentThesisPdf);
+document.getElementById('tool-final-revision-btn')?.addEventListener('click', runFinalGlobalRevision);
 document.getElementById('tool-duplicate-current-btn').addEventListener('click', () => {
   const thesis = getCurrentThesis();
   if (thesis) duplicateThesis(thesis.id);
