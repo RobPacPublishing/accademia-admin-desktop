@@ -953,6 +953,10 @@ function renderWorkspace() {
   const chapterVersions = (thesis.chapters[thesis.currentChapterIndex] || {}).versions || [];
   renderVersionSelect(chapterVersionSelectEl, chapterVersions);
   renderVersionMeta(chapterVersionMetaEl, chapterVersions);
+  const chapterGenerateBtn = document.getElementById('chapter-generate-btn');
+  if (chapterGenerateBtn) {
+    chapterGenerateBtn.textContent = getChapterGenerateButtonLabel(thesis, thesis.currentChapterIndex, thesis.chapters[thesis.currentChapterIndex]?.content || '');
+  }
   renderRuntimeState();
 }
 
@@ -1169,44 +1173,75 @@ function buildExportReadiness(thesis) {
   return getThesisCompletionReport(thesis);
 }
 
-function buildProgressiveChapterSections(thesis, chapterIndex, chapterText) {
+function analyzeProgressiveChapterState(thesis, chapterIndex, chapterText) {
   const validation = analyzeChapterCompleteness(thesis, chapterIndex, chapterText);
   const invalidCodes = new Set([
     ...validation.shortSubsections.map((item) => item.code),
     ...validation.substantialParagraphIssues.map((item) => item.code),
   ]);
-  return Object.fromEntries(validation.presentSubsections.map((item) => [
-    item.code,
-    { status: invalidCodes.has(item.code) ? 'pending' : 'done', locked: !invalidCodes.has(item.code) }
-  ]));
+  const expectedSubsections = validation.expectedSubsections || [];
+  const presentCodes = new Set(validation.presentSubsections.map((item) => item.code));
+  const sections = Object.fromEntries(expectedSubsections.map((line) => {
+    const code = line.match(/^(\d+\.\d+)/)?.[1];
+    const isPresent = code ? presentCodes.has(code) : false;
+    const isInvalid = code ? invalidCodes.has(code) : false;
+    return [code, {
+      status: isPresent && !isInvalid ? 'done' : 'pending',
+      locked: Boolean(isPresent && !isInvalid),
+      present: isPresent,
+      invalid: isInvalid,
+      missing: Boolean(code && !isPresent),
+      label: line,
+    }];
+  }).filter(([code]) => !!code));
+  const orderedCodes = expectedSubsections.map((line) => line.match(/^(\d+\.\d+)/)?.[1]).filter(Boolean);
+  const nextPendingCode = orderedCodes.find((code) => sections[code]?.status !== 'done') || null;
+  const completedCodes = orderedCodes.filter((code) => sections[code]?.status === 'done');
+  return { validation, sections, orderedCodes, completedCodes, nextPendingCode };
+}
+
+function buildProgressiveChapterSections(thesis, chapterIndex, chapterText) {
+  return analyzeProgressiveChapterState(thesis, chapterIndex, chapterText).sections;
 }
 
 function buildProgressiveChapterStatus(thesis, chapterIndex, chapterText) {
-  const validation = analyzeChapterCompleteness(thesis, chapterIndex, chapterText);
+  const progress = analyzeProgressiveChapterState(thesis, chapterIndex, chapterText);
+  const { validation, nextPendingCode, completedCodes } = progress;
   if (validation.complete) {
     return {
       message: 'Capitolo generato con successo.',
-      detail: 'Tutte le sottosezioni previste risultano complete.'
+      detail: 'Tutte le sottosezioni previste risultano complete.',
+      nextPoint: null,
+      complete: true
     };
   }
 
-  const lastPoint = validation.presentSubsections.at(-1)?.code || null;
-  const nextPoint = validation.missingSubsections[0]?.code || null;
-  if (nextPoint) {
+  if (nextPendingCode) {
+    const missingOrWeak = progress.orderedCodes.filter((code) => progress.sections[code]?.status !== 'done');
+    const lastPoint = completedCodes.at(-1) || null;
     return {
       message: lastPoint
-        ? `Punto ${lastPoint} generato. Prossimo punto da generare: ${nextPoint}.`
-        : `Prossimo punto da generare: ${nextPoint}.`,
-      detail: `Bozza parziale salvata. Mancano ancora: ${validation.missingSubsections.map((item) => item.code).join(', ')}.`
+        ? `Punto ${lastPoint} generato. Prossimo punto da generare: ${nextPendingCode}.`
+        : `Prossimo punto da generare: ${nextPendingCode}.`,
+      detail: `Bozza parziale salvata. Mancano ancora: ${missingOrWeak.join(', ')}.`,
+      nextPoint: nextPendingCode,
+      complete: false
     };
   }
 
   return {
     message: 'Capitolo salvato come bozza parziale.',
-    detail: 'Il capitolo richiede ancora controlli qualitativi prima di essere considerato completo.'
+    detail: 'Il capitolo richiede ancora controlli qualitativi prima di essere considerato completo.',
+    nextPoint: null,
+    complete: false
   };
 }
 
+function getChapterGenerateButtonLabel(thesis, chapterIndex, chapterText) {
+  const status = buildProgressiveChapterStatus(thesis, chapterIndex, chapterText);
+  if (status.complete || !status.nextPoint) return 'Genera capitolo';
+  return 'Riprendi da ' + status.nextPoint;
+}
 function getRecoverableSubsectionCodes(validation) {
   const ordered = [];
   const seen = new Set();
@@ -1936,7 +1971,14 @@ document.getElementById('chapter-generate-btn').addEventListener('click', async 
     const MAX_ITER = 18;
 
     const subsections = getExpectedSubsections(thesis.outline, chapterIndex);
-    const logLines = subsections.map(s => `⏳ ${s}`);
+    const initialProgress = analyzeProgressiveChapterState(thesis, chapterIndex, fullText);
+    const logLines = subsections.map((sub) => {
+      const code = sub.match(/^(\d+\.\d+)/)?.[1];
+      const sectionState = code ? initialProgress.sections[code] : null;
+      if (sectionState?.status === 'done') return `\u2713 ${sub}`;
+      if (sectionState?.invalid) return `! ${sub} (da rafforzare)`;
+      return `\u25CB ${sub}`;
+    });
     const renderLog = () => {
       statusLogEl.classList.add('busy');
       statusLogEl.innerHTML = `<strong>Generazione capitolo in corso</strong><div class="status-detail" style="white-space:pre-line;font-size:12px">${logLines.join('\n')}</div>`;
