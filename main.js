@@ -465,15 +465,30 @@ function normalizeChapterContentForExport(thesis = {}, chapter = {}, index = 0) 
       }
     }
   }
-  return text;
+  return normalizeTextOnlyForExport(text);
+}
+
+function normalizeTextOnlyForExport(text) {
+  return String(text || '')
+    .replace(/([a-zàèéìòù])\n\s*\n([a-zàèéìòù]{2,})/g, '$1$2')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function isRenderableChapterForExport(text) {
+  const normalized = normalizeTextOnlyForExport(text);
+  if (!normalized) return false;
+  if (/^[—–\-.\s…]+$/.test(normalized)) return false;
+  return /[\p{L}\p{N}]/u.test(normalized);
 }
 
 function buildAcademicHtml(thesis = {}) {
-  const chapters = Array.isArray(thesis.chapters) ? thesis.chapters : [];
+  const chapters = (Array.isArray(thesis.chapters) ? thesis.chapters : [])
+    .filter((chapter, index) => isRenderableChapterForExport(normalizeChapterContentForExport(thesis, chapter, index)));
   const outlineHtml = escapeHtml(thesis.outline || '').replace(/\n/g, '<br />');
   const abstractHtml = escapeHtml(thesis.abstract || '').replace(/\n/g, '<br />');
   const topicHtml = escapeHtml(thesis.topic || '').replace(/\n/g, '<br />');
-  const notesHtml = escapeHtml(thesis.notes || '').replace(/\n/g, '<br />');
   const exportStatusHtml = thesis.exportStatus === 'draft'
     ? '<div class="section-label">Stato documento</div><div class="block"><strong>BOZZA PARZIALE</strong><br />Non presentare come tesi finale consegnabile senza revisione.</div>'
     : '';
@@ -526,8 +541,6 @@ function buildAcademicHtml(thesis = {}) {
   <div class="block">${abstractHtml || '—'}</div>
 
   ${chaptersHtml || '<div class="section-label">Capitoli</div><div class="block">Nessun capitolo disponibile.</div>'}
-
-  ${notesHtml ? `<div class="section-label">Note admin</div><div class="notes">${notesHtml}</div>` : ''}
 </body>
 </html>`;
 }
@@ -601,7 +614,8 @@ async function buildDocxBufferFromThesis(thesis = {}) {
     children.push(...buildDocxParagraphsFromText('BOZZA PARZIALE - non presentare come tesi finale consegnabile senza revisione.', Paragraph));
   }
 
-  const chapters = Array.isArray(thesis.chapters) ? thesis.chapters : [];
+  const chapters = (Array.isArray(thesis.chapters) ? thesis.chapters : [])
+    .filter((chapter, index) => isRenderableChapterForExport(normalizeChapterContentForExport(thesis, chapter, index)));
   chapters.forEach((chapter, index) => {
     children.push(new Paragraph({
       text: `Capitolo ${index + 1} — ${chapter?.title || `Capitolo ${index + 1}`}`,
@@ -610,11 +624,6 @@ async function buildDocxBufferFromThesis(thesis = {}) {
     }));
     children.push(...buildDocxParagraphsFromText(normalizeChapterContentForExport(thesis, chapter, index), Paragraph));
   });
-
-  if (thesis.notes) {
-    children.push(new Paragraph({ text: 'Note admin', heading: HeadingLevel.HEADING_2, spacing: { before: 320, after: 160 } }));
-    children.push(...buildDocxParagraphsFromText(thesis.notes, Paragraph));
-  }
 
   const document = new Document({
     creator: APP_NAME,

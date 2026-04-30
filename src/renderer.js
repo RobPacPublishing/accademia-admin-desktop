@@ -28,7 +28,8 @@ import {
   resolveChapterTitle,
   getThesisCompletionReport,
   normalizeChapterForExport,
-  prepareThesisForExport
+  prepareThesisForExport,
+  preparePresentableThesisForExport
 } from './core/thesis-engine.js';
 import { loadAdminState, saveAdminState, copyText, saveAdminExportFile, buildThesisExportBaseName, exportThesisDocx, exportThesisPdf } from './services/storage-service.js';
 import { callTaskApi, testApiConnection } from './services/provider-service.js';
@@ -1223,8 +1224,9 @@ function confirmDraftExport(format, report) {
 }
 
 function buildThesisExportPayload(thesis) {
-  const prepared = prepareThesisForExport(thesis);
-  const report = buildExportReadiness(prepared);
+  const fullPrepared = prepareThesisForExport(thesis);
+  const prepared = preparePresentableThesisForExport(thesis);
+  const report = buildExportReadiness(fullPrepared);
   const statusBlock = buildExportStatusBlock(report);
   const baseName = `${buildThesisExportBaseName(prepared?.title || 'tesi-admin')}${report.complete ? '' : '-bozza-parziale'}`;
   const chapters = Array.isArray(prepared?.chapters) ? prepared.chapters : [];
@@ -1252,7 +1254,7 @@ function buildThesisExportPayload(thesis) {
     text,
     prepared,
     report,
-    json: JSON.stringify({ ...prepared, exportReadiness: report }, null, 2)
+    json: JSON.stringify({ ...fullPrepared, exportReadiness: report }, null, 2)
   };
 }
 
@@ -1264,8 +1266,8 @@ function buildAcademicHtmlExport(thesis) {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
 
-  const prepared = prepareThesisForExport(thesis);
-  const report = buildExportReadiness(prepared);
+  const prepared = preparePresentableThesisForExport(thesis);
+  const report = buildExportReadiness(prepareThesisForExport(thesis));
   const statusHtml = report.complete
     ? '<div class="section-label">Stato documento</div><div class="block">Tesi completa secondo i controlli desktop.</div>'
     : `<div class="section-label">Stato documento</div><div class="block"><strong>BOZZA PARZIALE</strong><br />Non presentare come tesi finale consegnabile senza revisione.<br /><br />${escapeHtml(report.issues.join('\n')).replace(/\n/g, '<br />')}</div>`;
@@ -1314,7 +1316,6 @@ function buildAcademicHtmlExport(thesis) {
   <div class="section-label">Abstract</div>
   <div class="block">${escapeHtml(thesis?.abstract || '').replace(/\n/g, '<br />') || '—'}</div>
   ${chaptersHtml || '<div class="section-label">Capitoli</div><div class="block">Nessun capitolo disponibile.</div>'}
-  ${thesis?.notes ? `<div class="section-label">Note admin</div><div class="notes">${escapeHtml(thesis.notes).replace(/\n/g, '<br />')}</div>` : ''}
 </body>
 </html>`;
 }

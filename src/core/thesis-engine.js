@@ -873,6 +873,19 @@ export function prepareThesisForExport(thesis) {
   return normalized;
 }
 
+export function preparePresentableThesisForExport(thesis) {
+  const prepared = prepareThesisForExport(thesis);
+  prepared.notes = '';
+  prepared.chapters = (Array.isArray(prepared.chapters) ? prepared.chapters : [])
+    .map((chapter, index) => ({
+      ...chapter,
+      exportChapterNumber: index + 1,
+      content: normalizeTextOnlyForExport(chapter?.content || '')
+    }))
+    .filter((chapter) => isRenderableChapterForExport(chapter?.content || ''));
+  return prepared;
+}
+
 export function promptFinalRevision(thesis) {
   const chapters = Array.isArray(thesis?.chapters) ? thesis.chapters : [];
   const compactChapters = chapters.map((chapter, index) => {
@@ -978,6 +991,24 @@ function stripArtificialAcademicTail(text) {
     .replace(/\n(?:In conclusione,?\s*)?questo capitolo (?:ha analizzato|si Ã¨ proposto(?: di)?|si e' proposto(?: di)?|ha mostrato|ha evidenziato|ha esaminato|ha consentito di)[\s\S]*$/i, '')
     .replace(/\n(?:Per concludere|In sintesi|In conclusione),?\s+(?:si puÃ² affermare|si puo' affermare|si puÃ² osservare|si puo' osservare|emerge che|si evidenzia che)[^\n]{0,260}$/i, '')
     .trim();
+}
+
+function normalizeTextOnlyForExport(text) {
+  return repairSplitLowercaseWordBreaks(String(text || ''))
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function repairSplitLowercaseWordBreaks(text) {
+  return String(text || '').replace(/([a-zàèéìòù])\n\s*\n([a-zàèéìòù]{2,})/g, '$1$2');
+}
+
+function isRenderableChapterForExport(text) {
+  const normalized = normalizeTextOnlyForExport(text);
+  if (!normalized) return false;
+  if (/^[—–\-.\s…]+$/.test(normalized)) return false;
+  return /[\p{L}\p{N}]/u.test(normalized);
 }
 
 function extractFinalTailSection(text) {
