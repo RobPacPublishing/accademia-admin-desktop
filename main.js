@@ -555,6 +555,28 @@ function buildDocxParagraphsFromText(text, Paragraph) {
   return lines.map((line) => new Paragraph({ text: line || ' ' }));
 }
 
+function sanitizeDocxSectionTitle(title) {
+  return String(title || '')
+    .replace(/\s+\?{1,3}\s+/g, ' - ')
+    .replace(/\s+[â€”â€“—–]+\s+/g, ' - ')
+    .trim();
+}
+
+function pushDocxSection(children, section, Paragraph, HeadingLevel) {
+  if (!String(section?.title || '').trim()) return;
+  const safeTitle = sanitizeDocxSectionTitle(section.title);
+  const safeContent = normalizeTextOnlyForExport(section?.content || '');
+  children.push(new Paragraph({
+    text: safeTitle,
+    heading: HeadingLevel.HEADING_1,
+    spacing: { before: 300, after: 160 },
+    pageBreakBefore: section?.pageBreakBefore === true
+  }));
+  if (String(safeContent || '').trim()) {
+    children.push(...buildDocxParagraphsFromText(safeContent, Paragraph));
+  }
+}
+
 async function buildDocxBufferFromThesis(thesis = {}) {
   let docxLib;
   try {
@@ -600,35 +622,72 @@ async function buildDocxBufferFromThesis(thesis = {}) {
     }));
   });
 
-  children.push(new Paragraph({ text: 'Argomento', heading: HeadingLevel.HEADING_1, spacing: { before: 300, after: 160 } }));
-  children.push(...buildDocxParagraphsFromText(thesis.topic || '', Paragraph));
-
-  children.push(new Paragraph({ text: 'Indice', heading: HeadingLevel.HEADING_1, spacing: { before: 320, after: 160 } }));
-  children.push(...buildDocxParagraphsFromText(thesis.outline || '', Paragraph));
-
-  children.push(new Paragraph({ text: 'Abstract', heading: HeadingLevel.HEADING_1, spacing: { before: 320, after: 160 } }));
-  children.push(...buildDocxParagraphsFromText(thesis.abstract || '', Paragraph));
+  pushDocxSection(children, { title: 'Argomento', content: thesis.topic || '', pageBreakBefore: true }, Paragraph, HeadingLevel);
+  pushDocxSection(children, { title: 'Indice', content: thesis.outline || '', pageBreakBefore: true }, Paragraph, HeadingLevel);
+  pushDocxSection(children, { title: 'Abstract', content: thesis.abstract || '', pageBreakBefore: true }, Paragraph, HeadingLevel);
 
   if (thesis.exportStatus === 'draft') {
-    children.push(new Paragraph({ text: 'Stato documento', heading: HeadingLevel.HEADING_1, spacing: { before: 320, after: 160 } }));
-    children.push(...buildDocxParagraphsFromText('BOZZA PARZIALE - non presentare come tesi finale consegnabile senza revisione.', Paragraph));
+    pushDocxSection(children, { title: 'Stato documento', content: 'BOZZA PARZIALE - non presentare come tesi finale consegnabile senza revisione.', pageBreakBefore: true }, Paragraph, HeadingLevel);
   }
 
   const chapters = (Array.isArray(thesis.chapters) ? thesis.chapters : [])
     .filter((chapter, index) => isRenderableChapterForExport(normalizeChapterContentForExport(thesis, chapter, index)));
   chapters.forEach((chapter, index) => {
-    children.push(new Paragraph({
-      text: `Capitolo ${index + 1} — ${chapter?.title || `Capitolo ${index + 1}`}`,
-      heading: HeadingLevel.HEADING_1,
-      spacing: { before: 360, after: 180 }
-    }));
-    children.push(...buildDocxParagraphsFromText(normalizeChapterContentForExport(thesis, chapter, index), Paragraph));
+    const chapterNumber = chapter?.exportChapterNumber || index + 1;
+    pushDocxSection(children, {
+      title: 'Capitolo ' + chapterNumber + ' ??? ' + (chapter?.title || ('Capitolo ' + chapterNumber)),
+      content: normalizeChapterContentForExport(thesis, chapter, index),
+      pageBreakBefore: true
+    }, Paragraph, HeadingLevel);
   });
 
   const document = new Document({
     creator: APP_NAME,
     title: thesis.title || 'Tesi AccademIA',
     description: 'Esportazione tesi da AccademIA Admin Desktop',
+    sections: [{
+      properties: {
+        page: {
+          margin: { top: 1440, right: 1134, bottom: 1440, left: 1134 },
+          size: { orientation: PageOrientation.PORTRAIT }
+        }
+      },
+      children
+    }]
+  });
+
+  return Packer.toBuffer(document);
+}
+
+async function buildDocxBufferFromSections(payload = {}) {
+  let docxLib;
+  try {
+    docxLib = require('docx');
+  } catch (error) {
+    throw new Error('Dipendenza mancante: esegui npm install per installare anche il pacchetto docx.');
+  }
+
+  const { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, PageOrientation } = docxLib;
+  const children = [];
+  children.push(new Paragraph({
+    children: [new TextRun({ text: payload.documentTitle || 'Documento', bold: true, size: 32 })],
+    heading: HeadingLevel.TITLE,
+    alignment: AlignmentType.CENTER,
+    spacing: { after: 280 }
+  }));
+
+  (Array.isArray(payload.sections) ? payload.sections : []).forEach((section, index) => {
+    pushDocxSection(children, {
+      title: section?.title || '',
+      content: section?.content || '',
+      pageBreakBefore: index > 0 && section?.pageBreakBefore !== false
+    }, Paragraph, HeadingLevel);
+  });
+
+  const document = new Document({
+    creator: APP_NAME,
+    title: payload.documentTitle || 'Documento AccademIA',
+    description: 'Esportazione DOCX cliente da AccademIA Admin Desktop',
     sections: [{
       properties: {
         page: {
@@ -826,11 +885,11 @@ function registerIpcHandlers() {
   ipcMain.handle('accademia-admin:export-docx', async (_event, payload = {}) => {
     try {
       const thesis = payload?.thesis && typeof payload.thesis === 'object' ? payload.thesis : null;
-      if (!thesis) {
+      if (!thesis && !Array.isArray(payload.sections)) {
         return { ok: false, error: 'Dati tesi mancanti per export DOCX.' };
       }
 
-      const defaultFileName = payload.defaultFileName || `${normalizeFilenamePart(thesis.title)}.docx`;
+      const defaultFileName = payload.defaultFileName || `${normalizeFilenamePart(thesis?.title || payload.documentTitle || 'documento')}.docx`;
       const result = await dialog.showSaveDialog({
         title: payload.title || 'Esporta tesi in DOCX',
         defaultPath: path.join(app.getPath('documents'), defaultFileName),
@@ -841,7 +900,7 @@ function registerIpcHandlers() {
         return { ok: false, canceled: true };
       }
 
-      const docxBuffer = await buildDocxBufferFromThesis(thesis);
+      const docxBuffer = Array.isArray(payload.sections) ? await buildDocxBufferFromSections(payload) : await buildDocxBufferFromThesis(thesis);
       await fs.writeFile(result.filePath, docxBuffer);
       return { ok: true, filePath: result.filePath };
     } catch (error) {

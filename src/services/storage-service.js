@@ -243,6 +243,22 @@ export async function exportThesisDocx(thesis, defaultFileName) {
   return result;
 }
 
+export async function exportCustomDocx(payload) {
+  const desktopStorage = window.accademiaAdmin?.storage;
+  if (!desktopStorage?.exportDocx) {
+    throw new Error('Export DOCX disponibile solo nella desktop Electron.');
+  }
+
+  const result = await desktopStorage.exportDocx(payload);
+
+  if (!result?.ok) {
+    if (result?.canceled) return { ok: false, canceled: true };
+    throw new Error(result?.error || 'Impossibile esportare il DOCX.');
+  }
+
+  return result;
+}
+
 export async function exportThesisPdf(thesis, html, defaultFileName) {
   const desktopStorage = window.accademiaAdmin?.storage;
   if (!desktopStorage?.exportPdf) {

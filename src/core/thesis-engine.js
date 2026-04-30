@@ -993,7 +993,7 @@ function stripArtificialAcademicTail(text) {
     .trim();
 }
 
-function normalizeTextOnlyForExport(text) {
+export function normalizeTextOnlyForExport(text) {
   return repairSplitLowercaseWordBreaks(String(text || ''))
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')

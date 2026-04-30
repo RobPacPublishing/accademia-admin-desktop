@@ -31,7 +31,7 @@ import {
   prepareThesisForExport,
   preparePresentableThesisForExport
 } from './core/thesis-engine.js';
-import { loadAdminState, saveAdminState, copyText, saveAdminExportFile, buildThesisExportBaseName, exportThesisDocx, exportThesisPdf } from './services/storage-service.js';
+import { loadAdminState, saveAdminState, copyText, saveAdminExportFile, buildThesisExportBaseName, exportThesisDocx, exportCustomDocx, exportThesisPdf } from './services/storage-service.js';
 import { callTaskApi, testApiConnection } from './services/provider-service.js';
 
 const viewMeta = {
@@ -890,7 +890,10 @@ function renderWorkspace() {
     document.getElementById('tool-export-thesis-html-btn'),
     document.getElementById('tool-export-thesis-json-btn'),
     document.getElementById('tool-export-thesis-docx-btn'),
-    document.getElementById('tool-export-thesis-pdf-btn'),
+    document.getElementById('tool-export-client-outline-docx-btn'),
+    document.getElementById('tool-export-client-abstract-docx-btn'),
+    document.getElementById('tool-export-client-chapter-docx-btn'),
+    document.getElementById('tool-export-client-thesis-docx-btn'),
     document.getElementById('tool-duplicate-current-btn'),
     document.getElementById('tool-archive-current-btn')
   ];
@@ -1460,6 +1463,133 @@ async function exportCurrentThesisDocx() {
     showToast(payload.report.complete ? 'Tesi esportata in DOCX.' : 'Bozza parziale esportata in DOCX.');
   } catch (error) {
     showToast(error?.message || 'Errore export DOCX.', true);
+  }
+}
+
+
+function buildClientDocxBaseName(thesis, suffix) {
+  return buildThesisExportBaseName(thesis?.title || 'tesi-admin') + '-' + suffix + '.docx';
+}
+
+function buildClientOutlineDocxPayload(thesis) {
+  return {
+    documentTitle: thesis.title || 'Tesi senza titolo',
+    defaultFileName: buildClientDocxBaseName(thesis, 'indice-cliente'),
+    title: 'Esporta indice cliente in DOCX',
+    sections: [
+      { title: 'Indice proposto', content: thesis.outline || '?', pageBreakBefore: false }
+    ]
+  };
+}
+
+function buildClientAbstractDocxPayload(thesis) {
+  return {
+    documentTitle: thesis.title || 'Tesi senza titolo',
+    defaultFileName: buildClientDocxBaseName(thesis, 'abstract-cliente'),
+    title: 'Esporta abstract cliente in DOCX',
+    sections: [
+      { title: 'Abstract', content: thesis.abstract || '?', pageBreakBefore: false }
+    ]
+  };
+}
+
+function buildClientChapterDocxPayload(thesis) {
+  const prepared = prepareThesisForExport(thesis);
+  const chapterIndex = thesis.currentChapterIndex || 0;
+  const chapter = prepared?.chapters?.[chapterIndex] || null;
+  const chapterText = normalizeChapterForExport(prepared, chapterIndex, chapter?.content || '');
+  if (!String(chapterText || '').trim() || /^[??\-.\s?]+$/.test(String(chapterText || '').trim())) {
+    throw new Error('Il capitolo corrente non contiene testo esportabile per il cliente.');
+  }
+  const chapterNumber = chapterIndex + 1;
+  const chapterTitle = resolveChapterTitle(prepared, chapterIndex);
+  return {
+    documentTitle: thesis.title || 'Tesi senza titolo',
+    defaultFileName: buildClientDocxBaseName(thesis, 'capitolo-' + chapterNumber + '-cliente'),
+    title: 'Esporta capitolo ' + chapterNumber + ' cliente in DOCX',
+    sections: [
+      { title: 'Versione per revisione del Capitolo ' + chapterNumber, content: '', pageBreakBefore: false },
+      { title: 'Capitolo ' + chapterNumber + ' ? ' + chapterTitle, content: chapterText, pageBreakBefore: false }
+    ]
+  };
+}
+
+function buildClientFullDocxPayload(thesis) {
+  const fullPrepared = prepareThesisForExport(thesis);
+  const report = buildExportReadiness(fullPrepared);
+  if (!report.complete) {
+    throw new Error('La tesi non ? completa: export cliente completo bloccato.');
+  }
+  const prepared = preparePresentableThesisForExport(thesis);
+  const chapterSections = (Array.isArray(prepared.chapters) ? prepared.chapters : []).map((chapter, index) => {
+    const chapterNumber = chapter?.exportChapterNumber || index + 1;
+    return {
+      title: 'Capitolo ' + chapterNumber + ' ? ' + (chapter?.title || ('Capitolo ' + chapterNumber)),
+      content: chapter?.content || '',
+      pageBreakBefore: true
+    };
+  });
+  return {
+    documentTitle: thesis.title || 'Tesi senza titolo',
+    defaultFileName: buildClientDocxBaseName(thesis, 'tesi-completa-cliente'),
+    title: 'Esporta tesi completa cliente in DOCX',
+    sections: [
+      { title: 'Indice', content: prepared.outline || '?', pageBreakBefore: false },
+      { title: 'Abstract', content: prepared.abstract || '?', pageBreakBefore: true },
+      ...chapterSections
+    ]
+  };
+}
+
+async function exportClientDocxDocument(payload, successMessage, eventMessage, extra = {}) {
+  const thesis = getCurrentThesis();
+  if (!thesis) {
+    showToast('Apri prima una tesi.', true);
+    return;
+  }
+  const result = await exportCustomDocx(payload);
+  if (!result?.ok) return;
+  appendEvent('export', eventMessage, { thesisId: thesis.id, format: 'docx-client', filePath: result.filePath, severity: 'info', ...extra });
+  showToast(successMessage);
+}
+
+async function exportClientOutlineDocx() {
+  const thesis = getCurrentThesis();
+  if (!thesis) return showToast('Apri prima una tesi.', true);
+  try {
+    await exportClientDocxDocument(buildClientOutlineDocxPayload(thesis), 'Indice cliente esportato in DOCX.', 'Esportato indice cliente in DOCX', { scope: 'outline' });
+  } catch (error) {
+    showToast(error?.message || 'Errore export indice cliente DOCX.', true);
+  }
+}
+
+async function exportClientAbstractDocx() {
+  const thesis = getCurrentThesis();
+  if (!thesis) return showToast('Apri prima una tesi.', true);
+  try {
+    await exportClientDocxDocument(buildClientAbstractDocxPayload(thesis), 'Abstract cliente esportato in DOCX.', 'Esportato abstract cliente in DOCX', { scope: 'abstract' });
+  } catch (error) {
+    showToast(error?.message || 'Errore export abstract cliente DOCX.', true);
+  }
+}
+
+async function exportClientCurrentChapterDocx() {
+  const thesis = getCurrentThesis();
+  if (!thesis) return showToast('Apri prima una tesi.', true);
+  try {
+    await exportClientDocxDocument(buildClientChapterDocxPayload(thesis), 'Capitolo cliente esportato in DOCX.', 'Esportato capitolo cliente in DOCX', { scope: 'chapter', chapterIndex: thesis.currentChapterIndex || 0 });
+  } catch (error) {
+    showToast(error?.message || 'Errore export capitolo cliente DOCX.', true);
+  }
+}
+
+async function exportClientFullThesisDocx() {
+  const thesis = getCurrentThesis();
+  if (!thesis) return showToast('Apri prima una tesi.', true);
+  try {
+    await exportClientDocxDocument(buildClientFullDocxPayload(thesis), 'Tesi completa cliente esportata in DOCX.', 'Esportata tesi completa cliente in DOCX', { scope: 'full' });
+  } catch (error) {
+    showToast(error?.message || 'Errore export tesi completa cliente DOCX.', true);
   }
 }
 
@@ -2172,8 +2302,11 @@ document.getElementById('settings-test-btn').addEventListener('click', async () 
 document.getElementById('tool-export-thesis-btn').addEventListener('click', exportCurrentThesis);
 document.getElementById('tool-export-thesis-html-btn').addEventListener('click', exportCurrentThesisHtml);
 document.getElementById('tool-export-thesis-json-btn').addEventListener('click', exportCurrentThesisJson);
-document.getElementById('tool-export-thesis-docx-btn').addEventListener('click', exportCurrentThesisDocx);
-document.getElementById('tool-export-thesis-pdf-btn').addEventListener('click', exportCurrentThesisPdf);
+document.getElementById('tool-export-thesis-docx-btn')?.addEventListener('click', exportCurrentThesisDocx);
+document.getElementById('tool-export-client-outline-docx-btn')?.addEventListener('click', exportClientOutlineDocx);
+document.getElementById('tool-export-client-abstract-docx-btn')?.addEventListener('click', exportClientAbstractDocx);
+document.getElementById('tool-export-client-chapter-docx-btn')?.addEventListener('click', exportClientCurrentChapterDocx);
+document.getElementById('tool-export-client-thesis-docx-btn')?.addEventListener('click', exportClientFullThesisDocx);
 document.getElementById('tool-final-revision-btn')?.addEventListener('click', runFinalGlobalRevision);
 document.getElementById('tool-duplicate-current-btn').addEventListener('click', () => {
   const thesis = getCurrentThesis();
