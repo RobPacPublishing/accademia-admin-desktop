@@ -171,7 +171,7 @@ export function applyAbstractToThesis(thesis, abstractText, label = 'Abstract ge
 
 export function applyChapterToThesis(thesis, chapterIndex, chapterText, label = 'Capitolo generato', options = {}) {
   ensureChapterCount(thesis, Math.max(thesis.chapters.length, chapterIndex + 1));
-  const cleaned = normalizeChapterForExport(thesis, chapterIndex, chapterText);
+  const cleaned = normalizeFinalChapterTail(thesis, normalizeChapterForExport(thesis, chapterIndex, chapterText));
   const validationMode = options?.validationMode || 'complete';
   assertChapterCompleteness(thesis, chapterIndex, cleaned, {
     allowMissingFutureSubsections: validationMode === 'progressive'
@@ -790,6 +790,45 @@ export function getThesisCompletionReport(thesis) {
   };
 }
 
+export function normalizeFinalChapterTail(thesis, chapterText) {
+  const normalizedText = String(chapterText || '').replace(/\r\n/g, '\n').trim();
+  if (!normalizedText) return '';
+
+  const tailMatch = extractFinalTailSection(normalizedText);
+  if (!tailMatch) return normalizedText;
+
+  const { heading, headingType, body, startIndex } = tailMatch;
+  const cleanedBody = String(body || '')
+    .replace(/^[\s\n]+|[\s\n]+$/g, '')
+    .replace(/\n{3,}/g, '\n\n');
+  const chapterBody = normalizedText.slice(0, startIndex).trim();
+
+  if (!cleanedBody) {
+    return chapterBody;
+  }
+
+  if (headingType === 'references') {
+    if (allowsProvisionalReferences(thesis)) {
+      return `${chapterBody}\n\nRiferimenti da verificare\n${cleanedBody}`.trim();
+    }
+    return chapterBody;
+  }
+
+  if (isSuspiciousFinalNotesSection(cleanedBody)) {
+    return chapterBody;
+  }
+
+  const finalHeading = looksMethodologicalOrConceptual(cleanedBody) || isSpecificNotesHeading(heading)
+    ? 'Note metodologiche e concettuali'
+    : '';
+
+  if (!finalHeading) {
+    return chapterBody;
+  }
+
+  return `${chapterBody}\n\n${finalHeading}\n${cleanedBody}`.trim();
+}
+
 export function normalizeChapterForExport(thesis, chapterIndex, chapterText) {
   const title = resolveChapterTitle(thesis, chapterIndex);
   const headingPatterns = [
@@ -939,6 +978,106 @@ function stripArtificialAcademicTail(text) {
     .replace(/\n(?:In conclusione,?\s*)?questo capitolo (?:ha analizzato|si Ã¨ proposto(?: di)?|si e' proposto(?: di)?|ha mostrato|ha evidenziato|ha esaminato|ha consentito di)[\s\S]*$/i, '')
     .replace(/\n(?:Per concludere|In sintesi|In conclusione),?\s+(?:si puÃ² affermare|si puo' affermare|si puÃ² osservare|si puo' osservare|emerge che|si evidenzia che)[^\n]{0,260}$/i, '')
     .trim();
+}
+
+function extractFinalTailSection(text) {
+  const aliases = [
+    { label: 'Note', type: 'notes' },
+    { label: 'Note finali', type: 'notes' },
+    { label: 'Note esplicative', type: 'notes' },
+    { label: 'Note metodologiche', type: 'notes' },
+    { label: 'Note metodologiche e concettuali', type: 'notes' },
+    { label: 'Riferimenti da verificare', type: 'references' },
+    { label: 'Riferimenti provvisori', type: 'references' }
+  ];
+
+  let bestMatch = null;
+  for (const alias of aliases) {
+    const pattern = new RegExp(`(^|\\n\\n)([ \\t]*${escapeRegex(alias.label)}[ \\t]*)\\n+([\\s\\S]*)$`, 'i');
+    const match = pattern.exec(text);
+    if (!match) continue;
+    const body = String(match[3] || '').trim();
+    if (!body) continue;
+    if (/(^|\n)\s*\d+\.\d+\s+/m.test(body)) continue;
+    const startIndex = match.index + (match[1] ? match[1].length : 0);
+    if (!bestMatch || startIndex > bestMatch.startIndex) {
+      bestMatch = {
+        heading: match[2].trim(),
+        headingType: alias.type,
+        body,
+        startIndex
+      };
+    }
+  }
+  return bestMatch;
+}
+
+function isSpecificNotesHeading(heading) {
+  return /note\s+(?:esplicative|metodologiche(?:\s+e\s+concettuali)?|finali)/i.test(String(heading || '').trim());
+}
+
+function allowsProvisionalReferences(thesis) {
+  const notes = String(thesis?.notes || '').toLowerCase();
+  return /\b(?:bibliografia|riferimenti)\s+provvisor/i.test(notes)
+    || /\briferimenti\s+da\s+verificare\b/i.test(notes)
+    || /\bbibliografia\s+da\s+verificare\b/i.test(notes);
+}
+
+function looksMethodologicalOrConceptual(text) {
+  const normalized = String(text || '').toLowerCase();
+  const positivePatterns = [
+    /metodolog/,
+    /concett/,
+    /terminolog/,
+    /definizion/,
+    /limite\s+metodologic/,
+    /cautela\s+interpretativ/,
+    /uso\s+tecnico/,
+    /uso\s+concettual/,
+    /precisazion/,
+    /quadro\s+teoric/,
+    /ambito\s+applicativ/,
+    /operativ/
+  ];
+  return positivePatterns.some((pattern) => pattern.test(normalized));
+}
+
+function isSuspiciousFinalNotesSection(text) {
+  const normalized = String(text || '').toLowerCase();
+  const compact = normalized.replace(/\s+/g, ' ').trim();
+  const suspiciousPatterns = [
+    /questa nota chiarisce/,
+    /queste note chiariscono/,
+    /e importante sottolineare/,
+    /e opportuno sottolineare/,
+    /la sezione evidenzia/,
+    /il capitolo evidenzia/,
+    /in conclusione/,
+    /si osserva che/,
+    /si evidenzia che/,
+    /in definitiva/,
+    /pseudo-riferiment/,
+    /\bdoi\s*:/,
+    /\bisbn\b/,
+    /\bissn\b/,
+    /\bpp\.\s*\d+/,
+    /\bpagg?\.\s*\d+/,
+    /\bvol\.\s*\d+/,
+    /\bn\.\s*\d+/,
+    /\bed\.\b/,
+    /\bcase editric/i,
+    /\bspringer\b|\broutledge\b|\bpearson\b|\bmulino\b|\blaterza\b|\bfrancoangeli\b/
+  ];
+  const suspiciousHits = suspiciousPatterns.filter((pattern) => pattern.test(normalized)).length;
+  const lines = compact.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+
+  if (!compact) return true;
+  if (/^[\[\]()0-9.,;:\s-]+$/.test(compact)) return true;
+  if (suspiciousHits >= 2) return true;
+  if (suspiciousHits >= 1 && !looksMethodologicalOrConceptual(normalized)) return true;
+  if (wordCount(compact) < 18 && !looksMethodologicalOrConceptual(normalized)) return true;
+  if (lines.length >= 2 && lines.every((line) => line.length < 120) && /\b\d{4}\b/.test(compact) && !looksMethodologicalOrConceptual(normalized)) return true;
+  return false;
 }
 
 function escapeRegex(value) {
