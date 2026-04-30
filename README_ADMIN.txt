@@ -73,8 +73,16 @@ Le cartelle seguenti non vanno versionate:
 Sono output locali o artefatti generati.
 
 9. Dati locali dell'app
-I dati dell'app non sono salvati nel progetto ma nella cartella dati locale di Electron / Windows userData.
-Questa cartella contiene lo stato locale usato dalla desktop admin.
+Lo stato principale della desktop admin viene salvato in modo portabile nella cartella del progetto/app:
+
+  storage/admin-state.json
+
+In sviluppo (`npm start`) il file resta quindi dentro `accademia-admin-desktop/storage/`.
+Nelle build packaged/portable l'app prova a usare una cartella `storage/` adiacente all'eseguibile, evitando percorsi non scrivibili dentro `app.asar`.
+
+Per compatibilita' resta supportato anche il vecchio archivio legacy in `userData/storage/admin-state.json`.
+Se il file portabile non esiste ma il legacy esiste, l'app ne copia automaticamente una versione nello storage portabile e crea anche un backup timestampato nella stessa cartella `storage/`.
+Il file legacy non viene mai cancellato automaticamente.
 
 10. Buona pratica prima di modifiche importanti
 Prima di modifiche rilevanti a renderer, main process, packaging o servizi:

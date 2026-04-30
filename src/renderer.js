@@ -559,7 +559,24 @@ function renderAppSystemInfo(info) {
   if (toolAppVersionEl) toolAppVersionEl.textContent = `v${info.version || '—'}`;
   if (toolAppPlatformEl) toolAppPlatformEl.textContent = info.platform || '—';
   if (toolAppElectronEl) toolAppElectronEl.textContent = info.electronVersion || '—';
-  if (toolAppStorageStatusEl) toolAppStorageStatusEl.textContent = info.stateDirectoryPath ? 'Pronto' : 'Non disponibile';
+  if (toolAppStorageStatusEl) {
+    if (!info.stateDirectoryPath) {
+      toolAppStorageStatusEl.textContent = 'Non disponibile';
+      return;
+    }
+
+    const fragments = [
+      info.storageMode === 'portable' ? 'Portabile' : 'Legacy',
+      info.stateDirectoryPath
+    ];
+    if (info.legacyStorageDetected) {
+      fragments.push('legacy AppData rilevato');
+    }
+    if (info.dualArchiveWarning) {
+      fragments.push(`doppio archivio (${info.dualArchiveStatus || 'unknown'})`);
+    }
+    toolAppStorageStatusEl.textContent = fragments.join(' · ');
+  }
 }
 
 function renderPreflightReport(report) {

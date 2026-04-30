@@ -8,6 +8,7 @@ const APP_NAME = 'AccademIA Admin Desktop';
 const APP_ID = 'com.robpac.accademiaadmindesktop';
 const STATE_DIR_NAME = 'storage';
 const STATE_FILE_NAME = 'admin-state.json';
+let stateStorageContext = null;
 
 function resolveAppIcon() {
   const candidates = [
@@ -25,16 +26,175 @@ function resolveAppIcon() {
   return undefined;
 }
 
-function getStateDirectory() {
+function getLegacyStateDirectory() {
   return path.join(app.getPath('userData'), STATE_DIR_NAME);
 }
 
+function getLegacyStateFilePath() {
+  return path.join(getLegacyStateDirectory(), STATE_FILE_NAME);
+}
+
+function getPortableBaseDirectory() {
+  return app.isPackaged
+    ? path.dirname(process.execPath)
+    : __dirname;
+}
+
+function getPortableStateDirectory() {
+  return path.join(getPortableBaseDirectory(), STATE_DIR_NAME);
+}
+
+function getPortableStateFilePath() {
+  return path.join(getPortableStateDirectory(), STATE_FILE_NAME);
+}
+
+function probeDirectoryWritableSync(targetPath) {
+  fsSync.mkdirSync(targetPath, { recursive: true });
+  const probePath = path.join(targetPath, `.write-test-${process.pid}-${Date.now()}.tmp`);
+  fsSync.writeFileSync(probePath, 'ok', 'utf8');
+  fsSync.unlinkSync(probePath);
+}
+
+function pathExists(targetPath) {
+  return fsSync.existsSync(targetPath);
+}
+
+function readFileIfExists(targetPath) {
+  try {
+    return fsSync.readFileSync(targetPath, 'utf8');
+  } catch (error) {
+    if (error?.code === 'ENOENT') {
+      return null;
+    }
+    throw error;
+  }
+}
+
+function compareArchiveFiles(portableFilePath, legacyFilePath) {
+  try {
+    const portableRaw = readFileIfExists(portableFilePath);
+    const legacyRaw = readFileIfExists(legacyFilePath);
+    if (portableRaw == null || legacyRaw == null) {
+      return 'unknown';
+    }
+    return portableRaw === legacyRaw ? 'same' : 'different';
+  } catch (_) {
+    return 'unknown';
+  }
+}
+
+function getStateStorageContext() {
+  if (stateStorageContext) {
+    return stateStorageContext;
+  }
+
+  return {
+    activeMode: 'legacy',
+    activeDirectory: getLegacyStateDirectory(),
+    activeFilePath: getLegacyStateFilePath(),
+    portableDirectory: getPortableStateDirectory(),
+    portableFilePath: getPortableStateFilePath(),
+    portableBaseDirectory: getPortableBaseDirectory(),
+    legacyDirectory: getLegacyStateDirectory(),
+    legacyFilePath: getLegacyStateFilePath(),
+    portableAvailable: false,
+    portableReason: 'Contesto storage non ancora inizializzato.',
+    portableExists: pathExists(getPortableStateFilePath()),
+    legacyExists: pathExists(getLegacyStateFilePath()),
+    dualArchive: false,
+    dualArchiveStatus: 'unknown',
+    migration: { performed: false, backupFilePath: null, source: null },
+    warnings: ['Contesto storage non ancora inizializzato.']
+  };
+}
+
+function getStateDirectory() {
+  return getStateStorageContext().activeDirectory;
+}
+
 function getStateFilePath() {
-  return path.join(getStateDirectory(), STATE_FILE_NAME);
+  return getStateStorageContext().activeFilePath;
 }
 
 async function ensureStateDirectory() {
   await fs.mkdir(getStateDirectory(), { recursive: true });
+}
+
+async function initializeStateStorage() {
+  const portableBaseDirectory = getPortableBaseDirectory();
+  const portableDirectory = getPortableStateDirectory();
+  const portableFilePath = getPortableStateFilePath();
+  const legacyDirectory = getLegacyStateDirectory();
+  const legacyFilePath = getLegacyStateFilePath();
+  const warnings = [];
+  const migration = { performed: false, backupFilePath: null, source: null };
+
+  let portableAvailable = false;
+  let portableReason = '';
+
+  try {
+    probeDirectoryWritableSync(portableDirectory);
+    portableAvailable = true;
+  } catch (error) {
+    portableReason = error?.message || 'Cartella storage portabile non scrivibile.';
+    warnings.push(`Storage portabile non disponibile: ${portableReason}`);
+  }
+
+  let portableExists = pathExists(portableFilePath);
+  const legacyExists = pathExists(legacyFilePath);
+
+  if (portableAvailable && !portableExists && legacyExists) {
+    await fs.mkdir(portableDirectory, { recursive: true });
+    const backupFilePath = path.join(portableDirectory, `admin-state.migrated-backup-${buildTimestampStamp()}.json`);
+    await fs.copyFile(legacyFilePath, portableFilePath);
+    await fs.copyFile(legacyFilePath, backupFilePath);
+    migration.performed = true;
+    migration.source = legacyFilePath;
+    migration.backupFilePath = backupFilePath;
+    portableExists = true;
+  }
+
+  const dualArchive = portableExists && legacyExists;
+  const dualArchiveStatus = dualArchive
+    ? compareArchiveFiles(portableFilePath, legacyFilePath)
+    : 'missing';
+
+  if (dualArchive) {
+    warnings.push(
+      dualArchiveStatus === 'different'
+        ? 'Rilevati sia archivio portabile sia archivio legacy AppData con contenuto differente. Viene usato quello portabile senza sovrascrivere nulla.'
+        : 'Rilevati sia archivio portabile sia archivio legacy AppData. Viene usato quello portabile senza sovrascrivere nulla.'
+    );
+  }
+
+  stateStorageContext = {
+    activeMode: portableAvailable ? 'portable' : 'legacy',
+    activeDirectory: portableAvailable ? portableDirectory : legacyDirectory,
+    activeFilePath: portableAvailable ? portableFilePath : legacyFilePath,
+    portableDirectory,
+    portableFilePath,
+    portableBaseDirectory,
+    legacyDirectory,
+    legacyFilePath,
+    portableAvailable,
+    portableReason,
+    portableExists,
+    legacyExists,
+    dualArchive,
+    dualArchiveStatus,
+    migration,
+    warnings
+  };
+
+  if (warnings.length) {
+    warnings.forEach((warning) => console.warn(`[storage] ${warning}`));
+  }
+
+  if (migration.performed) {
+    console.warn(`[storage] Migrazione completata da ${migration.source} a ${portableFilePath}`);
+  }
+
+  return stateStorageContext;
 }
 
 async function readStateFile() {
@@ -72,12 +232,11 @@ function buildExportDefaultFileName(extension = 'txt') {
 
 function buildPreflightChecks() {
   const checks = [];
+  const storage = getStateStorageContext();
 
   const pushCheck = (id, label, status, detail) => {
     checks.push({ id, label, status, detail });
   };
-
-  const pathExists = (targetPath) => fsSync.existsSync(targetPath);
 
   const logoPath = path.join(__dirname, 'src', 'assets', 'accademia-logo.png');
   pushCheck(
@@ -143,14 +302,57 @@ function buildPreflightChecks() {
     hasBuilderDependency ? `electron-builder ${packageJson.devDependencies['electron-builder']}` : 'Dipendenza electron-builder non rilevata'
   );
 
+  pushCheck(
+    'storage-active-mode',
+    'Storage attivo',
+    storage.activeMode === 'portable' ? 'ok' : 'warning',
+    storage.activeMode === 'portable'
+      ? `Portabile: ${storage.activeDirectory}`
+      : `Legacy AppData: ${storage.activeDirectory}`
+  );
+
+  pushCheck(
+    'storage-portable-target',
+    'Percorso storage portabile',
+    storage.portableAvailable ? 'ok' : 'warning',
+    storage.portableAvailable
+      ? storage.portableDirectory
+      : `${storage.portableDirectory} (${storage.portableReason || 'non disponibile'})`
+  );
+
+  pushCheck(
+    'storage-legacy-detected',
+    'Archivio legacy AppData rilevato',
+    storage.legacyExists ? 'warning' : 'ok',
+    storage.legacyExists ? storage.legacyFilePath : 'Nessun archivio legacy rilevato'
+  );
+
+  pushCheck(
+    'storage-dual-archive',
+    'Doppio archivio rilevato',
+    storage.dualArchive ? 'warning' : 'ok',
+    storage.dualArchive
+      ? `Portabile e legacy presenti (${storage.dualArchiveStatus}). Uso archivio portabile: ${storage.portableFilePath}`
+      : 'Un solo archivio rilevato'
+  );
+
+  pushCheck(
+    'storage-migration',
+    'Migrazione automatica legacy -> portabile',
+    storage.migration?.performed ? 'warning' : 'ok',
+    storage.migration?.performed
+      ? `Copiato ${storage.migration.source} in ${storage.portableFilePath} con backup ${storage.migration.backupFilePath}`
+      : 'Nessuna migrazione eseguita in questa sessione'
+  );
+
   try {
     fsSync.mkdirSync(getStateDirectory(), { recursive: true });
     const probePath = path.join(getStateDirectory(), `preflight-${Date.now()}.tmp`);
     fsSync.writeFileSync(probePath, 'ok', 'utf8');
     fsSync.unlinkSync(probePath);
-    pushCheck('storage-write', 'Scrittura archivio locale', 'ok', getStateDirectory());
+    pushCheck('storage-write', 'Scrittura archivio attivo', 'ok', getStateDirectory());
   } catch (error) {
-    pushCheck('storage-write', 'Scrittura archivio locale', 'error', error?.message || 'Cartella dati non scrivibile');
+    pushCheck('storage-write', 'Scrittura archivio attivo', 'error', error?.message || 'Cartella dati non scrivibile');
   }
 
   return checks;
@@ -479,6 +681,18 @@ function registerIpcHandlers() {
     chromeVersion: process.versions.chrome,
     nodeVersion: process.versions.node,
     userDataPath: app.getPath('userData'),
+    storageMode: getStateStorageContext().activeMode,
+    portableStoragePath: getStateStorageContext().portableFilePath,
+    portableStorageDirectoryPath: getStateStorageContext().portableDirectory,
+    legacyStoragePath: getStateStorageContext().legacyFilePath,
+    legacyStorageDirectoryPath: getStateStorageContext().legacyDirectory,
+    legacyStorageDetected: getStateStorageContext().legacyExists,
+    portableStorageAvailable: getStateStorageContext().portableAvailable,
+    portableStorageWarning: getStateStorageContext().portableReason,
+    dualArchiveWarning: getStateStorageContext().dualArchive,
+    dualArchiveStatus: getStateStorageContext().dualArchiveStatus,
+    migrationPerformed: Boolean(getStateStorageContext().migration?.performed),
+    migrationBackupPath: getStateStorageContext().migration?.backupFilePath || null,
     stateFilePath: getStateFilePath(),
     stateDirectoryPath: getStateDirectory()
   }));
@@ -642,6 +856,9 @@ ipcMain.handle('accademia-admin:run-preflight-check', async () => {
       version: packageJson.version || '1.6.0',
       checks,
       counts,
+      storageMode: getStateStorageContext().activeMode,
+      portableStoragePath: getStateStorageContext().portableFilePath,
+      legacyStoragePath: getStateStorageContext().legacyFilePath,
       stateDirectoryPath: getStateDirectory(),
       stateFilePath: getStateFilePath()
     };
@@ -681,12 +898,17 @@ if (process.platform === 'win32') {
 }
 
 app.whenReady().then(() => {
+  return initializeStateStorage();
+}).then(() => {
   registerIpcHandlers();
   createWindow();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
+}).catch((error) => {
+  console.error('Inizializzazione storage fallita:', error);
+  app.quit();
 });
 
 app.on('window-all-closed', () => {
