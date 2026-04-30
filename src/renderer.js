@@ -22,12 +22,18 @@ import {
   buildChapterNotes,
   promptChapterOpening,
   promptChapterSubsection,
+  promptChapterSubsectionExpansion,
   getExpectedSubsections,
   analyzeChapterCompleteness,
   parseChapterTitles,
   resolveChapterTitle,
   getThesisCompletionReport,
   normalizeChapterForExport,
+  saveChapterDraftToThesis,
+  extractChapterSubsection,
+  getSubsectionQualityReport,
+  normalizeRecoveredSubsectionText,
+  replaceChapterSubsection,
   prepareThesisForExport,
   preparePresentableThesisForExport
 } from './core/thesis-engine.js';
@@ -1201,6 +1207,77 @@ function buildProgressiveChapterStatus(thesis, chapterIndex, chapterText) {
   };
 }
 
+function getRecoverableSubsectionCodes(validation) {
+  const ordered = [];
+  const seen = new Set();
+  [...(validation?.shortSubsections || []), ...(validation?.substantialParagraphIssues || [])].forEach((item) => {
+    const code = item?.code;
+    if (!code || seen.has(code)) return;
+    seen.add(code);
+    ordered.push(code);
+  });
+  return ordered;
+}
+
+function shouldAcceptRecoveredSubsection(currentSectionText, candidateSectionText) {
+  const current = getSubsectionQualityReport(currentSectionText);
+  const candidate = getSubsectionQualityReport(candidateSectionText);
+  if (!candidate.hasText) return false;
+  if (candidate.valid) return true;
+  if (current.valid && candidate.words < current.words) return false;
+  if (candidate.words > current.words && candidate.paragraphs >= current.paragraphs) return true;
+  if (candidate.paragraphs > current.paragraphs && candidate.words >= Math.max(current.words, Math.floor(current.words * 0.9))) return true;
+  return false;
+}
+
+async function recoverShortSubsections(thesis, chapterIndex, chapterText, chapterSections, subsections, settings, includeNotes, timeout, logLines, renderLog) {
+  let workingText = String(chapterText || '').trim();
+  let validation = analyzeChapterCompleteness(thesis, chapterIndex, workingText);
+  const attemptedCodes = [];
+  let recoveredAny = false;
+
+  for (const code of getRecoverableSubsectionCodes(validation)) {
+    const subsectionLine = (subsections || []).find((item) => item.startsWith(`${code} `));
+    if (!subsectionLine) continue;
+    const currentSectionText = extractChapterSubsection(workingText, validation.expectedSubsections, subsectionLine);
+    if (!currentSectionText) continue;
+
+    attemptedCodes.push(code);
+    const logIndex = (subsections || []).findIndex((item) => item === subsectionLine);
+    if (logIndex >= 0) {
+      logLines[logIndex] = `~ ${subsectionLine} (espansione automatica)`;
+      renderLog();
+    }
+    logStatus(`Recupero mirato ${code}`, 'busy', 'Sottosezione sotto soglia: tentativo automatico di espansione in corso.');
+
+    const recoveryPrompt = promptChapterSubsectionExpansion(thesis, chapterIndex, subsectionLine, currentSectionText, workingText);
+    const input = buildStructuredTaskInput(thesis, 'chapter_draft', recoveryPrompt, { chapterIndex, recoverySubsectionCode: code });
+    input.existingChapterContent = workingText;
+    input.generationMode = 'subsection_recovery';
+    input.chapterSections = { ...(chapterSections || {}), [code]: { status: 'pending', locked: false, recovery: true } };
+    input.constraints = { ...(input.constraints || {}), includeFootnotes: includeNotes };
+
+    const result = await callTaskApi('chapter_draft', input, settings, { timeoutMs: timeout });
+    const candidateSectionText = normalizeRecoveredSubsectionText(subsectionLine, result.text || '', validation.expectedSubsections);
+    if (shouldAcceptRecoveredSubsection(currentSectionText, candidateSectionText)) {
+      workingText = replaceChapterSubsection(workingText, validation.expectedSubsections, subsectionLine, candidateSectionText);
+      recoveredAny = true;
+    }
+
+    validation = analyzeChapterCompleteness(thesis, chapterIndex, workingText);
+    if (logIndex >= 0) {
+      const stillWeak = validation.shortSubsections.some((item) => item.code === code)
+        || validation.substantialParagraphIssues.some((item) => item.code === code);
+      logLines[logIndex] = stillWeak ? `! ${subsectionLine} (ancora sotto soglia)` : `? ${subsectionLine}`;
+      renderLog();
+    }
+
+    if (!validation.shortSubsections.length && !validation.substantialParagraphIssues.length) break;
+  }
+
+  return { text: workingText, validation, attemptedCodes, recoveredAny };
+}
+
 function buildExportStatusBlock(report) {
   if (report.complete) return 'STATO DOCUMENTO\nTesi completa secondo i controlli desktop.\n';
   return [
@@ -1838,9 +1915,12 @@ document.getElementById('abstract-review-submit-btn').addEventListener('click', 
 document.getElementById('chapter-generate-btn').addEventListener('click', async () => {
   const thesis = getCurrentThesis();
   if (!thesis) { showToast('Apri prima una tesi.', true); return; }
+  let chapterIndex = thesis.currentChapterIndex || 0;
+  let fullText = (thesis.chapters?.[chapterIndex]?.content || '').trim();
+  let draftSavedAfterFailure = false;
   try {
     ensureWritableChapter(thesis);
-    const chapterIndex = thesis.currentChapterIndex;
+    chapterIndex = thesis.currentChapterIndex;
     const settings = state.settings;
     const timeout = getTaskTimeout('chapter_draft');
     const includeNotes = chapterIncludeNotesEl?.checked !== false;
@@ -1948,18 +2028,48 @@ document.getElementById('chapter-generate-btn').addEventListener('click', async 
     fullText = cleanMarkdown(fullText);
 
     // Note: generate automaticamente dal backend tramite appendChapterNotesIfNeeded
-    // (includeFootnotes: true per default nei constraints — nessuna chiamata separata necessaria)
+    // (includeFootnotes: true per default nei constraints; nessuna chiamata separata necessaria)
+
+    const recovery = await recoverShortSubsections(thesis, chapterIndex, fullText, chapterSections, subsections, settings, includeNotes, timeout, logLines, renderLog);
+    fullText = cleanMarkdown(recovery.text || fullText);
 
     if (chapterContentEl) chapterContentEl.value = fullText;
-    applyChapterToThesis(thesis, chapterIndex, fullText, 'Capitolo generato', { validationMode: 'progressive' });
+
+    try {
+      applyChapterToThesis(thesis, chapterIndex, fullText, 'Capitolo generato', { validationMode: 'progressive' });
+    } catch (validationError) {
+      saveChapterDraftToThesis(
+        thesis,
+        chapterIndex,
+        fullText,
+        recovery.attemptedCodes.length
+          ? 'Capitolo generato (bozza parziale dopo tentativo di recupero)'
+          : 'Capitolo generato (bozza parziale)'
+      );
+      await persistState('saved');
+      renderWorkspace();
+      renderThesisList();
+      draftSavedAfterFailure = true;
+      const recoveryDetail = recovery.attemptedCodes.length
+        ? ' Tentativo automatico di espansione eseguito su: ' + recovery.attemptedCodes.join(', ') + '.'
+        : '';
+      throw new Error((validationError.message + " Il testo utile e' stato comunque salvato come bozza parziale." + recoveryDetail).trim());
+    }
+
     const progressStatus = buildProgressiveChapterStatus(thesis, chapterIndex, fullText);
     await persistState('saved');
     renderWorkspace();
     renderThesisList();
-    appendEvent('generation', 'Generato capitolo tesi', { thesisId: thesis.id, task: 'chapter_draft' });
+    appendEvent('generation', 'Generato capitolo tesi', { thesisId: thesis.id, task: 'chapter_draft', recoveryAttempted: recovery.attemptedCodes.length > 0, recoveredAny: recovery.recoveredAny, recoveryCodes: recovery.attemptedCodes });
     await finishOperation(progressStatus.message, 'success', `${progressStatus.detail}\n\n${logLines.join('\n')}`);
     showToast(progressStatus.message);
   } catch (error) {
+    if (!draftSavedAfterFailure && thesis && String(fullText || '').trim()) {
+      saveChapterDraftToThesis(thesis, chapterIndex, fullText, 'Capitolo generato (bozza parziale salvata dopo errore)');
+      await persistState('saved');
+      renderWorkspace();
+      renderThesisList();
+    }
     const detail = error.message || 'Errore generazione capitolo.';
     appendEvent('generation_error', 'Errore generazione capitolo', { thesisId: thesis?.id, error: detail });
     await finishOperation('Errore generazione', 'error', detail);

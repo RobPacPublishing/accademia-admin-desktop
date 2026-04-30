@@ -184,6 +184,17 @@ export function applyChapterToThesis(thesis, chapterIndex, chapterText, label = 
   return chapter;
 }
 
+export function saveChapterDraftToThesis(thesis, chapterIndex, chapterText, label = 'Capitolo salvato come bozza parziale') {
+  ensureChapterCount(thesis, Math.max(thesis.chapters.length, chapterIndex + 1));
+  const cleaned = normalizeFinalChapterTail(thesis, normalizeChapterForExport(thesis, chapterIndex, chapterText));
+  const chapter = thesis.chapters[chapterIndex];
+  chapter.content = cleaned;
+  chapter.title = thesis.chapterTitles[chapterIndex] || chapter.title || `Capitolo ${chapterIndex + 1}`;
+  chapter.versions = appendVersion(chapter.versions, chapter.content, label);
+  touchThesis(thesis);
+  return chapter;
+}
+
 export function appendVersion(list, content, label) {
   const versions = Array.isArray(list) ? list.slice() : [];
   if (!String(content || '').trim()) return versions;
@@ -479,6 +490,39 @@ export function promptChapterSubsection(thesis, chapterIndex, subsection, subsec
       'Evita rimandi numerati [1][2][3] salvo che una precisazione metodologica o concettuale sia davvero necessaria; il testo deve restare pienamente utilizzabile anche senza note finali.',
       'Nessun elenco puntato, nessun markdown non richiesto.',
       'NON aggiungere sezioni di note, bibliografie, riferimenti bibliografici o appendici nella sottosezione.',
+    ].join('\n'),
+  ].filter(Boolean).join('\n\n');
+}
+
+export function promptChapterSubsectionExpansion(thesis, chapterIndex, subsection, currentSectionText, chapterText = '') {
+  const chapterTitle = thesis.chapterTitles[chapterIndex] || thesis.chapters?.[chapterIndex]?.title || `Capitolo ${chapterIndex + 1}`;
+  const disciplinary = buildDisciplinaryWritingGuidance(thesis);
+  const expectedSubsections = getExpectedSubsections(thesis.outline, chapterIndex);
+  const subsectionCode = (String(subsection || '').match(/^(\d+\.\d+)/) || [])[1] || '';
+  const chapterContext = String(chapterText || '').slice(0, 7000);
+  return [
+    'TASK: chapter_subsection_recovery',
+    `CAPITOLO: ${chapterTitle}`,
+    `SOTTOSEZIONE DA RAFFORZARE: ${subsection}`,
+    `CONTESTO ACCADEMICO\nFacolta': ${thesis.faculty}\nCorso: ${thesis.course}\nTipo laurea: ${thesis.degreeType}\nMetodologia: ${thesis.method}`,
+    `ARGOMENTO: ${thesis.topic}`,
+    thesis.notes ? `ISTRUZIONI OPERATIVE:\n${thesis.notes}` : '',
+    disciplinary ? `PROFILO DISCIPLINARE:\n${disciplinary}` : '',
+    expectedSubsections.length ? `SOTTOSEZIONI PREVISTE NEL CAPITOLO:\n${expectedSubsections.join('\n')}` : '',
+    chapterContext ? `CAPITOLO ATTUALE (CONTESTO):\n${chapterContext}` : '',
+    `TESTO ATTUALE DELLA SOTTOSEZIONE ${subsectionCode || ''}:\n${String(currentSectionText || '').slice(0, 5000)}`,
+    [
+      'REGOLE OBBLIGATORIE:',
+      `Restituisci SOLO la sottosezione ${subsection}, completa e pronta da sostituire nel capitolo.`,
+      `Inizia esattamente con il titolo della sottosezione: ${subsection}`,
+      'Mantieni il nucleo argomentativo gia\' valido e rafforzalo con contenuto analitico aggiuntivo: non riscrivere l\'intero capitolo e non generare altre sottosezioni.',
+      `Porta la sottosezione ad almeno ${CHAPTER_POINT_MIN_WORDS} parole e almeno ${CHAPTER_POINT_MIN_SUBSTANTIAL_PARAGRAPHS} paragrafi sostanziali.`,
+      'Se il testo attuale e\' troppo breve, espandilo aggiungendo chiarimenti teorici, passaggi logici, limiti, implicazioni e distinzione concettuale coerente con il tema.',
+      'Non accorciare il testo esistente se non per eliminare ripetizioni manifeste o formule deboli.',
+      'Non inserire il titolo del capitolo, note finali, bibliografie, riferimenti da verificare o appendici.',
+      'Non usare markdown, elenchi puntati o commenti di servizio.',
+      'Non inventare fonti, autori, anni, DOI, pagine, dati empirici o riferimenti bibliografici completi.',
+      'Restituisci solo la sottosezione rafforzata, senza testo prima o dopo.',
     ].join('\n'),
   ].filter(Boolean).join('\n\n');
 }
@@ -886,6 +930,47 @@ export function preparePresentableThesisForExport(thesis) {
   return prepared;
 }
 
+export function extractChapterSubsection(chapterText, expectedSubsections, subsectionLine) {
+  return extractSubsectionText(chapterText, expectedSubsections, subsectionLine);
+}
+
+export function getSubsectionQualityReport(sectionText) {
+  const text = String(sectionText || '').trim();
+  const words = countSubsectionBodyWords(text);
+  const paragraphs = countSubstantialParagraphs(text);
+  return {
+    hasText: !!text,
+    words,
+    paragraphs,
+    valid: !!text && words >= CHAPTER_POINT_MIN_WORDS && paragraphs >= CHAPTER_POINT_MIN_SUBSTANTIAL_PARAGRAPHS,
+  };
+}
+
+export function normalizeRecoveredSubsectionText(subsectionLine, rawText, expectedSubsections = []) {
+  const normalized = String(rawText || '').replace(/\r\n/g, '\n').trim();
+  if (!normalized) return '';
+  const extracted = extractSubsectionText(normalized, expectedSubsections, subsectionLine);
+  if (extracted) return extracted;
+  const standaloneHeading = String(subsectionLine || '').trim();
+  if (!standaloneHeading) return normalized;
+  const body = normalized
+    .replace(/^Capitolo\s+\d+[^\n]*\n+/i, '')
+    .replace(/^#{1,6}[ \t]+(.+)$/gm, '$1')
+    .replace(new RegExp(`^${escapeRegex(standaloneHeading)}\\s*\\n*`, 'i'), '')
+    .trim();
+  return body ? `${standaloneHeading}\n${body}`.trim() : standaloneHeading;
+}
+
+export function replaceChapterSubsection(chapterText, expectedSubsections, subsectionLine, replacementText) {
+  const bounds = findSubsectionBounds(chapterText, expectedSubsections, subsectionLine);
+  if (!bounds) return String(chapterText || '').trim();
+  const replacement = String(replacementText || '').trim();
+  if (!replacement) return String(chapterText || '').trim();
+  const before = String(chapterText || '').slice(0, bounds.start).replace(/\s*$/, '');
+  const after = String(chapterText || '').slice(bounds.end).replace(/^\s*/, '');
+  return [before, replacement, after].filter(Boolean).join('\n\n').trim();
+}
+
 export function promptFinalRevision(thesis) {
   const chapters = Array.isArray(thesis?.chapters) ? thesis.chapters : [];
   const compactChapters = chapters.map((chapter, index) => {
@@ -915,12 +1000,12 @@ export function promptFinalRevision(thesis) {
   ].filter(Boolean).join('\n\n');
 }
 
-function extractSubsectionText(chapterText, expectedSubsections, subsectionLine) {
+function findSubsectionBounds(chapterText, expectedSubsections, subsectionLine) {
   const code = (String(subsectionLine || '').match(/^(\d+\.\d+)/) || [])[1];
-  if (!code) return '';
+  if (!code) return null;
   const startPattern = new RegExp(`(^|\\n)\\s*${escapeRegex(code)}\\s+`, 'm');
   const startMatch = startPattern.exec(chapterText);
-  if (!startMatch) return '';
+  if (!startMatch) return null;
   const start = startMatch.index + (startMatch[1] ? 1 : 0);
   let end = chapterText.length;
   for (const other of expectedSubsections) {
@@ -932,7 +1017,13 @@ function extractSubsectionText(chapterText, expectedSubsections, subsectionLine)
       if (candidateEnd > start && candidateEnd < end) end = candidateEnd;
     }
   }
-  return chapterText.slice(start, end).trim();
+  return { start, end };
+}
+
+function extractSubsectionText(chapterText, expectedSubsections, subsectionLine) {
+  const bounds = findSubsectionBounds(chapterText, expectedSubsections, subsectionLine);
+  if (!bounds) return '';
+  return String(chapterText || '').slice(bounds.start, bounds.end).trim();
 }
 
 function countSubsectionBodyWords(sectionText) {
