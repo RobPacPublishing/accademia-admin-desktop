@@ -953,9 +953,14 @@ function renderWorkspace() {
   const chapterVersions = (thesis.chapters[thesis.currentChapterIndex] || {}).versions || [];
   renderVersionSelect(chapterVersionSelectEl, chapterVersions);
   renderVersionMeta(chapterVersionMetaEl, chapterVersions);
+  const currentChapterText = thesis.chapters[thesis.currentChapterIndex]?.content || '';
   const chapterGenerateBtn = document.getElementById('chapter-generate-btn');
   if (chapterGenerateBtn) {
-    chapterGenerateBtn.textContent = getChapterGenerateButtonLabel(thesis, thesis.currentChapterIndex, thesis.chapters[thesis.currentChapterIndex]?.content || '');
+    chapterGenerateBtn.textContent = getChapterGenerateButtonLabel(thesis, thesis.currentChapterIndex, currentChapterText);
+  }
+  if (!currentOperation) {
+    const idleStatus = buildCurrentChapterIdleStatus(thesis, thesis.currentChapterIndex, currentChapterText);
+    logStatus(idleStatus.message, 'idle', idleStatus.detail);
   }
   renderRuntimeState();
 }
@@ -1237,8 +1242,42 @@ function buildProgressiveChapterStatus(thesis, chapterIndex, chapterText) {
   };
 }
 
+function hasPartialChapterDraft(thesis, chapterIndex, chapterText) {
+  const progress = analyzeProgressiveChapterState(thesis, chapterIndex, chapterText);
+  return String(chapterText || '').trim().length > 0 && progress.completedCodes.length > 0 && !progress.validation.complete;
+}
+
+function buildCurrentChapterIdleStatus(thesis, chapterIndex, chapterText) {
+  const chapterNumber = chapterIndex + 1;
+  const progress = analyzeProgressiveChapterState(thesis, chapterIndex, chapterText);
+  if (!String(chapterText || '').trim()) {
+    return {
+      message: 'Capitolo ' + chapterNumber + ' pronto per la generazione.',
+      detail: ''
+    };
+  }
+  if (progress.validation.complete) {
+    return {
+      message: 'Capitolo ' + chapterNumber + ' completo.',
+      detail: progress.orderedCodes.length ? progress.orderedCodes.map((code) => '\u2713 ' + (progress.sections[code]?.label || code)).join('\n') : ''
+    };
+  }
+  const detailLines = progress.orderedCodes.map((code) => {
+    const section = progress.sections[code];
+    if (section?.status === 'done') return '\u2713 ' + (section.label || code);
+    if (section?.invalid) return '! ' + (section.label || code) + ' (da rafforzare)';
+    return '\u25CB ' + (section?.label || code);
+  });
+  const nextPoint = progress.nextPendingCode;
+  return {
+    message: nextPoint ? 'Bozza parziale del Capitolo ' + chapterNumber + '. Prossimo punto: ' + nextPoint + '.' : 'Capitolo ' + chapterNumber + ' in bozza parziale.',
+    detail: detailLines.join('\n')
+  };
+}
+
 function getChapterGenerateButtonLabel(thesis, chapterIndex, chapterText) {
   const status = buildProgressiveChapterStatus(thesis, chapterIndex, chapterText);
+  if (!hasPartialChapterDraft(thesis, chapterIndex, chapterText)) return 'Genera capitolo';
   if (status.complete || !status.nextPoint) return 'Genera capitolo';
   return 'Riprendi da ' + status.nextPoint;
 }
