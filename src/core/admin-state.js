@@ -136,6 +136,7 @@ export function normalizeWorkspaceRuntime(rawRuntime) {
 export function normalizeThesisRecord(thesis) {
   const now = new Date().toISOString();
   const item = thesis && typeof thesis === 'object' ? thesis : {};
+  const rawWorkflowState = item.workflowState && typeof item.workflowState === 'object' ? item.workflowState : {};
   // Ricalcola titoli dall'outline (sorgente autoritativa) per evitare troncamento
   const outlineLines = String(item.outline || '').split('\n');
   const titlesFromOutline = outlineLines
@@ -184,7 +185,21 @@ export function normalizeThesisRecord(thesis) {
     topic: item.topic || '',
     method: item.method || 'Teorica',
     notes: item.notes || '',
+    advisorSources: item.advisorSources || item.supervisorSources || item.relatorSources || '',
     outline: item.outline || '',
+    finalApparatus: item.finalApparatus || item.finalReferences || '',
+    finalSections: {
+      conclusions: String(item.finalSections?.conclusions || '').trim(),
+      bibliography: String(item.finalSections?.bibliography || item.finalSections?.references || '').trim(),
+      legalReferences: String(item.finalSections?.legalReferences || item.finalSections?.normativeReferences || '').trim(),
+      sitography: String(item.finalSections?.sitography || item.finalSections?.webReferences || '').trim()
+    },
+    finalApprovals: {
+      conclusions: item.finalApprovals?.conclusions === true,
+      legalReferences: item.finalApprovals?.legalReferences === true,
+      bibliography: item.finalApprovals?.bibliography === true,
+      sitography: item.finalApprovals?.sitography === true
+    },
     outlineVersions: Array.isArray(item.outlineVersions) && item.outlineVersions.length
       ? item.outlineVersions.map((version, index) => normalizeVersionRecord(version, `outline-v${index + 1}`))
       : item.outline
@@ -199,6 +214,11 @@ export function normalizeThesisRecord(thesis) {
     chapterTitles: mergedTitles,
     chapters: normalizedChapters,
     currentChapterIndex: Number.isInteger(item.currentChapterIndex) ? item.currentChapterIndex : 0,
+    workflowState: {
+      phase: rawWorkflowState.phase === 'finalization_pending' ? 'finalization_pending' : rawWorkflowState.phase === 'complete' ? 'complete' : 'chapters',
+      chaptersCompletedAt: rawWorkflowState.chaptersCompletedAt || null,
+      statusMessage: rawWorkflowState.statusMessage || ''
+    },
     archived: Boolean(item.archived),
     completedAt: item.completedAt || null,
     createdAt: item.createdAt || now,

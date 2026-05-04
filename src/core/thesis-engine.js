@@ -5,6 +5,30 @@ export const CHAPTER_POINT_TARGET_MIN_WORDS = 800;
 export const CHAPTER_POINT_MAX_WORDS = 1000;
 export const CHAPTER_POINT_MIN_SUBSTANTIAL_PARAGRAPHS = 5;
 
+export function createEmptyFinalSections() {
+  return {
+    conclusions: '',
+    bibliography: '',
+    legalReferences: '',
+    sitography: ''
+  };
+}
+
+export function normalizeFinalSections(rawSections, fallbackApparatus = '') {
+  const item = rawSections && typeof rawSections === 'object' ? rawSections : {};
+  const normalized = {
+    conclusions: String(item.conclusions || '').trim(),
+    bibliography: String(item.bibliography || item.references || '').trim(),
+    legalReferences: String(item.legalReferences || item.normativeReferences || '').trim(),
+    sitography: String(item.sitography || item.webReferences || '').trim()
+  };
+  if (!normalized.bibliography && !normalized.conclusions && !normalized.legalReferences && !normalized.sitography) {
+    const fallback = String(fallbackApparatus || '').trim();
+    if (fallback) normalized.bibliography = fallback;
+  }
+  return normalized;
+}
+
 export function createThesisFromForm(form) {
   return normalizeThesisShape({
     id: crypto.randomUUID(),
@@ -15,9 +39,18 @@ export function createThesisFromForm(form) {
     topic: String(form.topic || '').trim(),
     method: String(form.method || 'Teorica').trim(),
     notes: String(form.notes || '').trim(),
+    advisorSources: String(form.advisorSources || '').trim(),
     archived: false,
     outline: '',
     abstract: '',
+    finalApparatus: '',
+    finalSections: createEmptyFinalSections(),
+    finalApprovals: {
+      conclusions: false,
+      legalReferences: false,
+      bibliography: false,
+      sitography: false
+    },
     chapterTitles: ['Capitolo 1'],
     chapters: [{
       id: crypto.randomUUID(),
@@ -26,6 +59,11 @@ export function createThesisFromForm(form) {
       versions: []
     }],
     currentChapterIndex: 0,
+    workflowState: {
+      phase: 'chapters',
+      chaptersCompletedAt: null,
+      statusMessage: ''
+    },
     outlineVersions: [],
     abstractVersions: [],
     createdAt: new Date().toISOString(),
@@ -34,6 +72,7 @@ export function createThesisFromForm(form) {
 }
 
 export function normalizeThesisShape(raw) {
+  const rawWorkflowState = raw?.workflowState && typeof raw.workflowState === 'object' ? raw.workflowState : {};
   const thesis = {
     id: raw?.id || crypto.randomUUID(),
     title: String(raw?.title || '').trim(),
@@ -43,9 +82,18 @@ export function normalizeThesisShape(raw) {
     topic: String(raw?.topic || '').trim(),
     method: String(raw?.method || 'Teorica').trim(),
     notes: String(raw?.notes || '').trim(),
+    advisorSources: String(raw?.advisorSources || raw?.supervisorSources || raw?.relatorSources || '').trim(),
     archived: Boolean(raw?.archived),
     outline: String(raw?.outline || ''),
     abstract: String(raw?.abstract || ''),
+    finalApparatus: String(raw?.finalApparatus || raw?.finalReferences || ''),
+    finalSections: normalizeFinalSections(raw?.finalSections, raw?.finalApparatus || raw?.finalReferences || ''),
+    finalApprovals: {
+      conclusions: raw?.finalApprovals?.conclusions === true,
+      legalReferences: raw?.finalApprovals?.legalReferences === true,
+      bibliography: raw?.finalApprovals?.bibliography === true,
+      sitography: raw?.finalApprovals?.sitography === true
+    },
     chapterTitles: Array.isArray(raw?.chapterTitles) ? raw.chapterTitles.map((x) => String(x || '').trim()) : ['Capitolo 1'],
     chapters: Array.isArray(raw?.chapters) ? raw.chapters.map((chapter, index) => ({
       id: chapter?.id || crypto.randomUUID(),
@@ -54,6 +102,11 @@ export function normalizeThesisShape(raw) {
       versions: Array.isArray(chapter?.versions) ? chapter.versions : []
     })) : [],
     currentChapterIndex: Number.isInteger(raw?.currentChapterIndex) ? raw.currentChapterIndex : 0,
+    workflowState: {
+      phase: rawWorkflowState.phase === 'finalization_pending' ? 'finalization_pending' : rawWorkflowState.phase === 'complete' ? 'complete' : 'chapters',
+      chaptersCompletedAt: rawWorkflowState.chaptersCompletedAt || null,
+      statusMessage: String(rawWorkflowState.statusMessage || '').trim()
+    },
     outlineVersions: Array.isArray(raw?.outlineVersions) ? raw.outlineVersions : [],
     abstractVersions: Array.isArray(raw?.abstractVersions) ? raw.abstractVersions : [],
     createdAt: raw?.createdAt || new Date().toISOString(),
@@ -240,7 +293,11 @@ export function buildStructuredTaskInput(thesis, taskName, prompt, extra = {}) {
     degreeCourse: thesis.course || '',
     degreeType: thesis.degreeType || '',
     methodology: thesis.method || '',
-    adminNotes: thesis.notes || '',
+    adminNotes: [
+      thesis.notes ? String(thesis.notes || '').trim() : '',
+      thesis.advisorSources ? 'MATERIALI E FONTI INDICATE DAL RELATORE:\n' + String(thesis.advisorSources || '').trim() : ''
+    ].filter(Boolean).join('\n\n'),
+    advisorSources: thesis.advisorSources || '',
     requestedChapters: chapterTitles.length || thesis.chapters.length || 0,
     approvedOutline: thesis.outline || '',
     approvedAbstract: thesis.abstract || '',
@@ -1000,6 +1057,96 @@ export function promptFinalRevision(thesis) {
   ].filter(Boolean).join('\n\n');
 }
 
+
+export function promptFinalSections(thesis) {
+  const chapters = Array.isArray(thesis?.chapters) ? thesis.chapters : [];
+  const compactChapters = chapters.map((chapter, index) => {
+    const content = normalizeChapterForExport(thesis, index, chapter?.content || '');
+    return `CAPITOLO ${index + 1} - ${resolveChapterTitle(thesis, index)}
+${content.slice(0, 6500)}`;
+  }).join('\n\n');
+
+  return [
+    'TASK: thesis_final_sections',
+    `ARGOMENTO: ${thesis.topic || thesis.title || ''}`,
+    `CONTESTO ACCADEMICO
+Facolta: ${thesis.faculty || ''}
+Corso: ${thesis.course || ''}
+Tipo laurea: ${thesis.degreeType || ''}
+Metodologia: ${thesis.method || ''}`,
+    thesis.notes ? `NOTE ADMIN / VINCOLI:
+${thesis.notes}` : '',
+    thesis.outline ? `INDICE:
+${thesis.outline}` : '',
+    thesis.abstract ? `ABSTRACT:
+${thesis.abstract}` : '',
+    `CAPITOLI SVILUPPATI:
+${compactChapters}`,
+    [
+      'Genera la fase finale di una TESI DI LAUREA, non di un libro.',
+      'Produci sezioni accademiche distinte e sostanziali.',
+      'Sezioni richieste: Conclusioni; Bibliografia e riferimenti bibliografici; Riferimenti normativi se pertinenti; Sitografia / fonti online solo se realmente giustificate.',
+      'Le Conclusioni devono sintetizzare criticamente il percorso dei capitoli, indicare esiti, limiti e prospettive.',
+      'La Bibliografia e i riferimenti bibliografici devono basarsi solo su elementi realmente ricavabili dal testo, dalle note, dalle citazioni interne o da fonti istituzionali/normative effettivamente richiamate.',
+      'Non inventare autori, DOI, ISBN, URL, sentenze, articoli, riviste, pagine, case editrici o riferimenti normativi non verificabili.',
+      'Se un riferimento non e certo, non inserirlo come bibliografia definitiva.',
+      'Per una tesi giuridica distingui chiaramente bibliografia dottrinale, riferimenti normativi e fonti istituzionali.',
+      'In Riferimenti normativi inserisci solo norme, provvedimenti o fonti giuridiche effettivamente desumibili dalla tesi; se non emergono basi certe, ometti la sezione invece di inventare.',
+      'In Sitografia e fonti online inserisci solo fonti online realmente presenti o chiaramente giustificate dal testo; se non ci sono, ometti la sezione invece di riempirla con URL generici.',
+      'Non lasciare sezioni obbligatorie vuote. Conclusioni e Bibliografia devono essere entrambe sostanziali.',
+      'Non aggiungere commenti di servizio, note admin, placeholder, avvisi tipo "da verificare", "inserire fonti" o istruzioni meta.',
+      'Formato di output: solo testo finale, in piano, con i titoli esatti delle sezioni su righe separate e contenuto sostanziale sotto ogni titolo.'
+    ].join('\n')
+  ].filter(Boolean).join('\n\n');
+}
+
+export function promptFinalConclusions(thesis) {
+  const chapters = Array.isArray(thesis?.chapters) ? thesis.chapters : [];
+  const compactChapters = chapters.map((chapter, index) => {
+    const content = normalizeChapterForExport(thesis, index, chapter?.content || '');
+    return `CAPITOLO ${index + 1} - ${resolveChapterTitle(thesis, index)}\n${content.slice(0, 7000)}`;
+  }).join('\n\n');
+
+  return [
+    'TASK: thesis_final_conclusions',
+    'Genera esclusivamente le CONCLUSIONI finali di una TESI DI LAUREA.',
+    'Non generare Bibliografia, Riferimenti normativi, Sitografia, Appendici o nuovi capitoli.',
+    `ARGOMENTO: ${thesis.topic || thesis.title || ''}`,
+    `CONTESTO ACCADEMICO\nFacolta: ${thesis.faculty || ''}\nCorso: ${thesis.course || ''}\nTipo laurea: ${thesis.degreeType || ''}\nMetodologia: ${thesis.method || ''}`,
+    thesis.notes ? `NOTE ADMIN / VINCOLI:\n${thesis.notes}` : '',
+    thesis.outline ? `INDICE:\n${thesis.outline}` : '',
+    thesis.abstract ? `ABSTRACT:\n${thesis.abstract}` : '',
+    `CAPITOLI SVILUPPATI:\n${compactChapters}`,
+    [
+      'REGOLE OBBLIGATORIE:',
+      'Scrivi solo la sezione intitolata Conclusioni.',
+      'Tra 650 e 900 parole, massimo 6 paragrafi, senza duplicazioni e senza interrompere frasi o periodi.',
+      'Concludi sempre con un ultimo paragrafo compiuto, non sospeso, che chiuda il ragionamento senza formule artificiali.',
+      'Le conclusioni devono derivare dai capitoli approvati e sintetizzare criticamente il percorso della tesi.',
+      'Evidenzia risultati argomentativi, limiti, implicazioni e prospettive senza ripetere meccanicamente i capitoli.',
+      'Non introdurre nuove fonti, nuovi autori, nuove norme o dati non presenti nel materiale fornito.',
+      'Non inserire Bibliografia, Riferimenti normativi, Sitografia o altri apparati finali.',
+      'Non usare placeholder, note admin, commenti tecnici o avvisi di verifica.',
+      'Formato: titolo Conclusioni su una riga, seguito dal testo sostanziale. Non usare sottotitoli, markdown, numerazioni, sezioni interne o titoli intermedi.'
+    ].join('\n')
+  ].filter(Boolean).join('\n\n');
+}
+
+export function promptFinalSectionsRetry(thesis, previousOutput = '', validationIssues = []) {
+  const basePrompt = promptFinalSections(thesis);
+  const issues = Array.isArray(validationIssues) ? validationIssues.filter(Boolean) : [];
+  return [
+    basePrompt,
+    'RIGENERAZIONE OBBLIGATORIA:',
+    'L output precedente era insufficiente perche conteneva solo titoli, sezioni quasi vuote o contenuto non accademicamente utilizzabile.',
+    issues.length ? `CRITICITA RILEVATE:\n- ${issues.join('\n- ')}` : '',
+    'Rigenera integralmente la fase finale rendendola sostanziale.',
+    'Non ripetere intestazioni senza contenuto.',
+    'Non restituire placeholder o avvisi di verifica.',
+    'Mantieni solo riferimenti realmente desumibili dal materiale disponibile.',
+    previousOutput ? `OUTPUT PRECEDENTE INSUFFICIENTE (DA NON RIUSARE IN FORMA VUOTA):\n${String(previousOutput || '').slice(0, 5000)}` : ''
+  ].filter(Boolean).join('\n\n');
+}
 function findSubsectionBounds(chapterText, expectedSubsections, subsectionLine) {
   const code = (String(subsectionLine || '').match(/^(\d+\.\d+)/) || [])[1];
   if (!code) return null;

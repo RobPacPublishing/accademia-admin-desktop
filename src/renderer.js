@@ -19,6 +19,11 @@ import {
   promptChapterRevision,
   promptTutorRevision,
   promptFinalRevision,
+  promptFinalSections,
+  promptFinalConclusions,
+  promptFinalSectionsRetry,
+  createEmptyFinalSections,
+  normalizeFinalSections,
   buildChapterNotes,
   promptChapterOpening,
   promptChapterSubsection,
@@ -79,11 +84,12 @@ let latestPreflightReport = null;
 const titleEl = document.getElementById('view-title');
 const subtitleEl = document.getElementById('view-subtitle');
 const appInfoEl = document.getElementById('app-info');
-const buttons = Array.from(document.querySelectorAll('.nav-item'));
+const sidebarButtons = Array.from(document.querySelectorAll('.nav-item'));
 const views = Array.from(document.querySelectorAll('.view'));
 const toastEl = document.getElementById('toast');
 const saveStateEl = document.getElementById('workspace-save-state');
 const statusLogEl = document.getElementById('workspace-status-log');
+const workspacePhaseStatusEl = document.getElementById('workspace-phase-status');
 const runtimeStripEl = document.getElementById('workspace-runtime-strip');
 const runtimeDirtyEl = document.getElementById('runtime-dirty-indicator');
 const runtimeSaveEl = document.getElementById('runtime-save-indicator');
@@ -156,6 +162,7 @@ const workspaceFields = {
   degreeType: document.getElementById('workspace-field-degree-type'),
   method: document.getElementById('workspace-field-method'),
   topic: document.getElementById('workspace-field-topic'),
+  advisorSources: document.getElementById('workspace-field-advisor-sources'),
   notes: document.getElementById('workspace-field-notes')
 };
 
@@ -170,6 +177,26 @@ const chapterVersionSelectEl = document.getElementById('chapter-version-select')
 const outlineVersionMetaEl = document.getElementById('outline-version-meta');
 const abstractVersionMetaEl = document.getElementById('abstract-version-meta');
 const chapterVersionMetaEl = document.getElementById('chapter-version-meta');
+const finalApparatusCardEl = document.getElementById('final-apparatus-card');
+const finalApparatusContentEl = document.getElementById('final-apparatus-content');
+const finalConclusionsContentEl = document.getElementById('final-conclusions-content');
+const finalLegalReferencesContentEl = document.getElementById('final-legal-references-content');
+const finalBibliographyContentEl = document.getElementById('final-bibliography-content');
+const finalSitographyContentEl = document.getElementById('final-sitography-content');
+const finalConclusionsApproveBtnEl = document.getElementById('final-conclusions-approve-btn');
+const finalLegalReferencesApproveBtnEl = document.getElementById('final-legal-references-approve-btn');
+const finalBibliographyApproveBtnEl = document.getElementById('final-bibliography-approve-btn');
+const finalBibliographyFormatBtnEl = document.getElementById('final-bibliography-format-btn');
+const finalSitographyApproveBtnEl = document.getElementById('final-sitography-approve-btn');
+const finalConclusionsBadgeEl = document.getElementById('final-conclusions-badge');
+const finalLegalReferencesBadgeEl = document.getElementById('final-legal-references-badge');
+const finalBibliographyBadgeEl = document.getElementById('final-bibliography-badge');
+const finalSitographyBadgeEl = document.getElementById('final-sitography-badge');
+const finalApparatusGenerateBtnEl = document.getElementById('final-apparatus-generate-btn');
+const finalApparatusSaveBtnEl = document.getElementById('final-apparatus-save-btn');
+const finalApparatusCopyBtnEl = document.getElementById('final-apparatus-copy-btn');
+const finalApparatusDownloadBtnEl = document.getElementById('final-apparatus-download-btn');
+const finalApparatusStatusEl = document.getElementById('final-apparatus-status');
 const settingsApiBaseEl = document.getElementById('settings-api-base');
 const settingsTimeoutEl = document.getElementById('settings-timeout');
 
@@ -223,11 +250,11 @@ function getFacultyValue(selectEl, customInputEl) {
 }
 
 function setView(viewName) {
-  buttons.forEach((button) => button.classList.toggle('active', button.dataset.view === viewName));
+  sidebarButtons.forEach((button) => button.classList.toggle('active', button.dataset.view === viewName));
   views.forEach((view) => view.classList.toggle('active-view', view.id === `view-${viewName}`));
   const meta = viewMeta[viewName];
-  titleEl.textContent = meta.title;
-  subtitleEl.textContent = meta.subtitle;
+  titleEl.textContent = normalizeAdminUiText(meta.title);
+  subtitleEl.textContent = normalizeAdminUiText(meta.subtitle);
 }
 
 function getCurrentThesis() {
@@ -248,7 +275,7 @@ function getRuntimeState() {
 }
 
 function formatCompactDate(value) {
-  if (!value) return '—';
+  if (!value) return 'â€”';
   try {
     return new Date(value).toLocaleString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   } catch (_) {
@@ -274,30 +301,30 @@ function renderRuntimeState(reason = '') {
   runtimeOpEl.className = 'runtime-chip';
 
   if (!thesis) {
-    runtimeDirtyEl.textContent = 'Stato bozza: —';
-    runtimeSaveEl.textContent = 'Ultimo salvataggio: —';
-    runtimeOpEl.textContent = 'Operazioni: nessuna';
+    runtimeDirtyEl.textContent = normalizeAdminUiText('Stato bozza: â€”');
+    runtimeSaveEl.textContent = normalizeAdminUiText('Ultimo salvataggio: â€”');
+    runtimeOpEl.textContent = normalizeAdminUiText('Operazioni: nessuna');
     recoveryBannerEl.classList.add('hidden');
     return;
   }
 
-  runtimeDirtyEl.textContent = runtime.dirty
-    ? `Stato bozza: modifiche locali${reason ? ` · ${reason}` : ''}`
-    : 'Stato bozza: stabile';
+  runtimeDirtyEl.textContent = normalizeAdminUiText(runtime.dirty
+    ? `Stato bozza: modifiche locali${reason ? ` Â· ${reason}` : ''}`
+    : 'Stato bozza: stabile');
   if (runtime.dirty) runtimeDirtyEl.classList.add('warning');
 
-  runtimeSaveEl.textContent = `Ultimo salvataggio: ${formatCompactDate(runtime.lastSavedAt)}`;
+  runtimeSaveEl.textContent = normalizeAdminUiText(`Ultimo salvataggio: ${formatCompactDate(runtime.lastSavedAt)}`);
   if (!runtime.lastSavedAt) runtimeSaveEl.classList.add('warning');
 
   if (runtime.pendingOperation) {
-    runtimeOpEl.textContent = `Operazioni: ${runtime.pendingOperation.label} · avviata ${formatCompactDate(runtime.pendingOperation.startedAt)}`;
+    runtimeOpEl.textContent = normalizeAdminUiText(`Operazioni: ${runtime.pendingOperation.label} Â· avviata ${formatCompactDate(runtime.pendingOperation.startedAt)}`);
     runtimeOpEl.classList.add('warning');
   } else {
-    runtimeOpEl.textContent = 'Operazioni: nessuna';
+    runtimeOpEl.textContent = normalizeAdminUiText('Operazioni: nessuna');
   }
 
   if (runtime.recoveryNotice?.message) {
-    recoveryMessageEl.textContent = runtime.recoveryNotice.message;
+    recoveryMessageEl.textContent = normalizeAdminUiText(runtime.recoveryNotice.message);
     recoveryBannerEl.classList.remove('hidden');
     recoveryOpenBtnEl.disabled = !runtime.recoveryNotice.thesisId;
   } else {
@@ -308,11 +335,11 @@ function renderRuntimeState(reason = '') {
 function renderVersionMeta(el, versions) {
   if (!el) return;
   if (!versions.length) {
-    el.textContent = 'Nessuna versione salvata.';
+    el.textContent = normalizeAdminUiText('Nessuna versione salvata.');
     return;
   }
   const latest = versions[0];
-  el.textContent = `${versions.length} versioni disponibili · ultima ${formatCompactDate(latest.createdAt)}`;
+  el.textContent = normalizeAdminUiText(`${versions.length} versioni disponibili Â· ultima ${formatCompactDate(latest.createdAt)}`);
 }
 
 function detectRecoveryState() {
@@ -325,7 +352,7 @@ function detectRecoveryState() {
       thesisId: runtime.pendingOperation.thesisId || null,
       kind: 'operation-interrupted',
       createdAt: new Date().toISOString(),
-      message: `La sessione precedente si è chiusa durante "${runtime.pendingOperation.label}". Ho ripristinato l'ultimo stato locale disponibile.`
+      message: `La sessione precedente si Ã¨ chiusa durante "${runtime.pendingOperation.label}". Ho ripristinato l'ultimo stato locale disponibile.`
     };
     runtime.pendingOperation = null;
     runtime.dirty = false;
@@ -338,7 +365,7 @@ function detectRecoveryState() {
       thesisId: state.currentThesisId || null,
       kind: 'unclean-close',
       createdAt: new Date().toISOString(),
-      message: 'La desktop non risulta chiusa in modo pulito. Ho riaperto l’ultimo stato locale disponibile del workspace.'
+      message: 'La desktop non risulta chiusa in modo pulito. Ho riaperto lâ€™ultimo stato locale disponibile del workspace.'
     };
     runtime.dirty = false;
     runtime.dirtyAt = null;
@@ -394,7 +421,7 @@ async function persistState(mode = 'saved') {
       runtime.dirtyAt = null;
     }
     await saveAdminState(state);
-    const saveLabel = mode === 'pending' ? 'Salvataggio in corso…' : `Salvato · ${formatCompactDate(runtime.lastSavedAt)}`;
+    const saveLabel = mode === 'pending' ? 'Salvataggio in corsoâ€¦' : `Salvato Â· ${formatCompactDate(runtime.lastSavedAt)}`;
     setSaveState(saveLabel, mode);
     renderMetrics();
     renderRuntimeState();
@@ -407,12 +434,12 @@ async function persistState(mode = 'saved') {
 }
 
 function setSaveState(message, mode = 'saved') {
-  saveStateEl.textContent = message;
+  saveStateEl.textContent = normalizeAdminUiText(message);
   saveStateEl.dataset.mode = mode;
 }
 
 function showToast(message, error = false) {
-  toastEl.textContent = message;
+  toastEl.textContent = normalizeAdminUiText(message);
   toastEl.className = `toast${error ? ' error' : ''}`;
   clearTimeout(showToast.timer);
   showToast.timer = setTimeout(() => {
@@ -421,7 +448,7 @@ function showToast(message, error = false) {
 }
 
 function setBusyUi(isBusy) {
-  const controls = Array.from(document.querySelectorAll('.shell button, .shell input, .shell textarea, .shell select'));
+  const controls = Array.from(document.querySelectorAll('.shell button:not(.nav-item), .shell input, .shell textarea, .shell select'));
   controls.forEach((el) => {
     if (isBusy) {
       el.dataset.prevDisabled = el.disabled ? '1' : '0';
@@ -439,10 +466,10 @@ function logStatus(message, mode = 'idle', detail = '') {
   statusLogEl.classList.toggle('busy', mode === 'busy');
   statusLogEl.classList.toggle('error', mode === 'error');
   if (mode === 'busy') {
-    statusLogEl.innerHTML = `<div class="status-line"><span class="status-spinner"></span><strong>${escapeHtml(message)}</strong></div>${detail ? `<div class="status-detail">${escapeHtml(detail)}</div>` : ''}`;
+    statusLogEl.innerHTML = `<div class="status-line"><span class="status-spinner"></span><strong>${escapeAdminUiHtml(message)}</strong></div>${detail ? `<div class="status-detail">${escapeAdminUiHtml(detail)}</div>` : ''}`;
     return;
   }
-  statusLogEl.innerHTML = `<strong>${escapeHtml(message)}</strong>${detail ? `<div class="status-detail">${escapeHtml(detail)}</div>` : ''}`;
+  statusLogEl.innerHTML = `<strong>${escapeAdminUiHtml(message)}</strong>${detail ? `<div class="status-detail">${escapeAdminUiHtml(detail)}</div>` : ''}`;
 }
 
 function stopOperationTicker() {
@@ -454,7 +481,7 @@ function stopOperationTicker() {
 
 async function startOperation(label, detail, taskName = null) {
   if (currentOperation) {
-    showToast("È già in corso un'operazione. Attendi il completamento.", true);
+    showToast("Ãˆ giÃ  in corso un'operazione. Attendi il completamento.", true);
     return false;
   }
   saveWorkspaceFieldsToState({ silent: true, immediate: true });
@@ -470,14 +497,14 @@ async function startOperation(label, detail, taskName = null) {
   };
   await persistState('saved');
   setBusyUi(true);
-  setSaveState('Operazione in corso…', 'pending');
+  setSaveState('Operazione in corsoâ€¦', 'pending');
   renderRuntimeState();
-  logStatus(label, 'busy', detail || 'Connessione al provider in corso…');
+  logStatus(label, 'busy', detail || 'Connessione al provider in corsoâ€¦');
   operationTicker = window.setInterval(() => {
     if (!currentOperation) return;
     const seconds = Math.max(1, Math.floor((Date.now() - currentOperation.startedAt) / 1000));
-    let stage = 'Richiesta inviata. Attendi il completamento della generazione…';
-    if (seconds > 12) stage = 'Elaborazione ancora in corso. La richiesta non è bloccata.';
+    let stage = 'Richiesta inviata. Attendi il completamento della generazioneâ€¦';
+    if (seconds > 12) stage = 'Elaborazione ancora in corso. La richiesta non Ã¨ bloccata.';
     if (seconds > 35) stage = 'Elaborazione estesa: il provider sta ancora lavorando sul contenuto.';
     logStatus(currentOperation.label, 'busy', `${stage} (${seconds}s)`);
     renderRuntimeState();
@@ -524,7 +551,7 @@ function cleanMarkdown(text) {
     .replace(/\[(\d+)\]\s*:/g, '$1.')
     // Rimuovi heading "Capitolo X..." solo se immediatamente prima della sezione Note
     .replace(/\n+Capitolo\s+\d+[^\n]*\n+(?=Note\b)/gi, '\n\n')
-    // Rimuovi backslash prima dei numeri nelle note (1\. → 1., Note1. → 1.)
+    // Rimuovi backslash prima dei numeri nelle note (1\. â†’ 1., Note1. â†’ 1.)
     .replace(/^Note(\d+)\\?\.\s*/gm, '$1. ')
     .replace(/^(\d+)\\(\.\s)/gm, '$1$2')
     .replace(/\n{3,}/g, '\n\n')
@@ -552,6 +579,34 @@ function escapeHtml(value) {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
 }
+function normalizeAdminUiText(value) {
+  let text = String(value ?? '');
+  if (/[\u00C3\u00C2\u00E2]/.test(text)) {
+    try {
+      const bytes = Uint8Array.from(Array.from(text, (char) => char.charCodeAt(0) & 0xff));
+      const decoded = new TextDecoder('utf-8').decode(bytes);
+      if (decoded && decoded !== text && !decoded.includes('\uFFFD')) {
+        text = decoded;
+      }
+    } catch (_) {
+      // fallback silenzioso: resta il testo originale
+    }
+  }
+  return text
+    .replace(/[\u2012\u2013\u2014]/g, ' - ')
+    .replace(/[\u00B7\u2022]/g, ' - ')
+    .replace(/\u2026/g, '...')
+    .replace(/\u2192/g, ' -> ')
+    .replace(/\u00A0/g, ' ')
+    .replace(/\u00C2(?=\s|[.,;:!?()\-])/g, '')
+    .replace(/[ \t]*-[ \t]*-[ \t]*/g, ' - ')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim();
+}
+
+function escapeAdminUiHtml(value) {
+  return escapeHtml(normalizeAdminUiText(value));
+}
 
 function getPreflightStatusLabel(status) {
   return {
@@ -563,12 +618,12 @@ function getPreflightStatusLabel(status) {
 
 function renderAppSystemInfo(info) {
   if (!info) return;
-  if (toolAppVersionEl) toolAppVersionEl.textContent = `v${info.version || '—'}`;
-  if (toolAppPlatformEl) toolAppPlatformEl.textContent = info.platform || '—';
-  if (toolAppElectronEl) toolAppElectronEl.textContent = info.electronVersion || '—';
+  if (toolAppVersionEl) toolAppVersionEl.textContent = normalizeAdminUiText(`v${info.version || 'â€”'}`);
+  if (toolAppPlatformEl) toolAppPlatformEl.textContent = normalizeAdminUiText(info.platform || 'â€”');
+  if (toolAppElectronEl) toolAppElectronEl.textContent = normalizeAdminUiText(info.electronVersion || 'â€”');
   if (toolAppStorageStatusEl) {
     if (!info.stateDirectoryPath) {
-      toolAppStorageStatusEl.textContent = 'Non disponibile';
+      toolAppStorageStatusEl.textContent = normalizeAdminUiText('Non disponibile');
       return;
     }
 
@@ -582,7 +637,7 @@ function renderAppSystemInfo(info) {
     if (info.dualArchiveWarning) {
       fragments.push(`doppio archivio (${info.dualArchiveStatus || 'unknown'})`);
     }
-    toolAppStorageStatusEl.textContent = fragments.join(' · ');
+    toolAppStorageStatusEl.textContent = normalizeAdminUiText(fragments.join(' Â· '));
   }
 }
 
@@ -590,13 +645,13 @@ function renderPreflightReport(report) {
   if (!toolsSystemReportEl) return;
   if (!report) {
     toolsSystemReportEl.className = 'empty-state compact-empty-state';
-    toolsSystemReportEl.textContent = 'Nessuna verifica eseguita.';
+    toolsSystemReportEl.textContent = normalizeAdminUiText('Nessuna verifica eseguita.');
     return;
   }
 
   if (report.error && (!Array.isArray(report.checks) || !report.checks.length)) {
     toolsSystemReportEl.className = 'system-report';
-    toolsSystemReportEl.innerHTML = `<div class="system-check-item"><div class="system-check-item-head"><span class="system-check-label">Verifica non riuscita</span><span class="system-check-status error">Errore</span></div><div class="system-check-detail">${escapeHtml(report.error)}</div></div>`;
+    toolsSystemReportEl.innerHTML = `<div class="system-check-item"><div class="system-check-item-head"><span class="system-check-label">Verifica non riuscita</span><span class="system-check-status error">Errore</span></div><div class="system-check-detail">${escapeAdminUiHtml(report.error)}</div></div>`;
     return;
   }
 
@@ -605,16 +660,16 @@ function renderPreflightReport(report) {
   const head = `
     <div class="system-report-head">
       <div class="system-report-title">Verifica app e packaging</div>
-      <div class="system-report-meta">${formatDate(report.createdAt)} · OK ${counts.ok || 0} · Avvisi ${counts.warning || 0} · Errori ${counts.error || 0}</div>
+      <div class="system-report-meta">${formatDate(report.createdAt)} Â· OK ${counts.ok || 0} Â· Avvisi ${counts.warning || 0} Â· Errori ${counts.error || 0}</div>
     </div>
   `;
   const items = checks.map((check) => `
     <div class="system-check-item">
       <div class="system-check-item-head">
-        <span class="system-check-label">${escapeHtml(check.label)}</span>
-        <span class="system-check-status ${escapeHtml(check.status)}">${getPreflightStatusLabel(check.status)}</span>
+        <span class="system-check-label">${escapeAdminUiHtml(check.label)}</span>
+        <span class="system-check-status ${escapeAdminUiHtml(check.status)}">${getPreflightStatusLabel(check.status)}</span>
       </div>
-      <div class="system-check-detail">${escapeHtml(check.detail || '—')}</div>
+      <div class="system-check-detail">${escapeAdminUiHtml(check.detail || '???')}</div>
     </div>
   `).join('');
 
@@ -628,15 +683,15 @@ function buildAppSummaryText() {
   const counts = report.counts || {};
   return [
     `App: ${info.appName || 'AccademIA Admin Desktop'}`,
-    `Versione: ${info.version || '—'}`,
-    `Piattaforma: ${info.platform || '—'}`,
-    `Electron: ${info.electronVersion || '—'}`,
-    `Node: ${info.nodeVersion || '—'}`,
-    `Chrome: ${info.chromeVersion || '—'}`,
-    `Cartella dati: ${info.stateDirectoryPath || '—'}`,
-    `File stato: ${info.stateFilePath || '—'}`,
+    `Versione: ${info.version || 'â€”'}`,
+    `Piattaforma: ${info.platform || 'â€”'}`,
+    `Electron: ${info.electronVersion || 'â€”'}`,
+    `Node: ${info.nodeVersion || 'â€”'}`,
+    `Chrome: ${info.chromeVersion || 'â€”'}`,
+    `Cartella dati: ${info.stateDirectoryPath || 'â€”'}`,
+    `File stato: ${info.stateFilePath || 'â€”'}`,
     `Ultima verifica: ${report.createdAt ? formatDate(report.createdAt) : 'mai eseguita'}`,
-    `Esito verifica: OK ${counts.ok || 0} · Avvisi ${counts.warning || 0} · Errori ${counts.error || 0}`
+    `Esito verifica: OK ${counts.ok || 0} Â· Avvisi ${counts.warning || 0} Â· Errori ${counts.error || 0}`
   ].join('\n');
 }
 
@@ -647,17 +702,17 @@ async function runPreflightCheck() {
   }
   if (toolsSystemReportEl) {
     toolsSystemReportEl.className = 'empty-state compact-empty-state';
-    toolsSystemReportEl.textContent = 'Verifica app e packaging in corso…';
+    toolsSystemReportEl.textContent = normalizeAdminUiText('Verifica app e packaging in corsoâ€¦');
   }
   const report = await window.accademiaAdmin.diagnostics.runPreflightCheck();
   latestPreflightReport = report;
   renderPreflightReport(report);
   appendEvent(
     'preflight',
-    report.ok ? 'Verifica app e packaging completata' : 'Verifica app e packaging con criticità',
+    report.ok ? 'Verifica app e packaging completata' : 'Verifica app e packaging con criticitÃ ',
     { severity: report.ok ? 'info' : 'warning', report }
   );
-  showToast(report.ok ? 'Verifica completata.' : 'Verifica completata con criticità.');
+  showToast(report.ok ? 'Verifica completata.' : 'Verifica completata con criticitÃ .');
 }
 
 async function copyAppSummary() {
@@ -711,7 +766,7 @@ function getEventRelatedThesis(event) {
   const thesisId = event?.payload?.thesisId || event?.payload?.recovery?.thesisId || null;
   if (!thesisId) return null;
   const thesis = state.theses.find((item) => item.id === thesisId);
-  if (!thesis) return { id: thesisId, title: 'Tesi non più presente' };
+  if (!thesis) return { id: thesisId, title: 'Tesi non piÃ¹ presente' };
   return { id: thesis.id, title: thesis.title || 'Tesi senza titolo' };
 }
 
@@ -750,7 +805,7 @@ function renderEventTypeFilterOptions() {
   for (const type of types) {
     const option = document.createElement('option');
     option.value = type;
-    option.textContent = type;
+    option.textContent = normalizeAdminUiText(type);
     eventsTypeFilterEl.appendChild(option);
   }
   eventsTypeFilterEl.value = types.includes(previous) || previous === 'all' ? previous : 'all';
@@ -762,10 +817,10 @@ function buildDiagnosticsSummary(events) {
   const warningCount = state.events.filter((event) => getEventSeverity(event) === 'warning').length;
   const lastEvent = state.events[0];
 
-  if (diagTotalCountEl) diagTotalCountEl.textContent = String(total);
-  if (diagErrorCountEl) diagErrorCountEl.textContent = String(errorCount);
-  if (diagWarningCountEl) diagWarningCountEl.textContent = String(warningCount);
-  if (diagLastEventEl) diagLastEventEl.textContent = lastEvent ? formatCompactDate(lastEvent.createdAt) : '—';
+  if (diagTotalCountEl) diagTotalCountEl.textContent = normalizeAdminUiText(String(total));
+  if (diagErrorCountEl) diagErrorCountEl.textContent = normalizeAdminUiText(String(errorCount));
+  if (diagWarningCountEl) diagWarningCountEl.textContent = normalizeAdminUiText(String(warningCount));
+  if (diagLastEventEl) diagLastEventEl.textContent = normalizeAdminUiText(lastEvent ? formatCompactDate(lastEvent.createdAt) : 'â€”');
 
   return {
     total,
@@ -786,19 +841,19 @@ function buildEventsExportPayload(events) {
 
 function buildEventsSummaryText(events, summary) {
   const lines = [
-    'ACCADEMIA ADMIN DESKTOP · DIAGNOSTICA',
+    'ACCADEMIA ADMIN DESKTOP Â· DIAGNOSTICA',
     `Totale log: ${summary.total}`,
     `Eventi filtrati: ${summary.filteredCount}`,
     `Errori: ${summary.errorCount}`,
     `Avvisi: ${summary.warningCount}`,
-    `Ultimo evento: ${summary.lastEventAt ? formatDate(summary.lastEventAt) : '—'}`,
+    `Ultimo evento: ${summary.lastEventAt ? formatDate(summary.lastEventAt) : 'â€”'}`,
     ''
   ];
 
   for (const event of events) {
     const severity = getSeverityLabel(getEventSeverity(event));
     const thesis = getEventRelatedThesis(event);
-    lines.push(`[${formatDate(event.createdAt)}] [${severity}] ${event.type} · ${event.message}`);
+    lines.push(`[${formatDate(event.createdAt)}] [${severity}] ${event.type} Â· ${event.message}`);
     if (thesis?.title) lines.push(`Tesi: ${thesis.title}`);
     if (event?.payload?.error) lines.push(`Errore: ${event.payload.error}`);
     const payload = JSON.stringify(event.payload || {}, null, 2);
@@ -819,10 +874,10 @@ function slugify(text) {
 }
 
 function renderMetrics() {
-  dashboardMetrics.total.textContent = String(state.theses.length);
-  dashboardMetrics.active.textContent = String(state.theses.filter((thesis) => !thesis.archived).length);
-  dashboardMetrics.events.textContent = String(state.events.length);
-  dashboardMetrics.critical.textContent = String(state.events.filter((event) => ['error', 'warning'].includes(getEventSeverity(event))).length);
+  dashboardMetrics.total.textContent = normalizeAdminUiText(String(state.theses.length));
+  dashboardMetrics.active.textContent = normalizeAdminUiText(String(state.theses.filter((thesis) => !thesis.archived).length));
+  dashboardMetrics.events.textContent = normalizeAdminUiText(String(state.events.length));
+  dashboardMetrics.critical.textContent = normalizeAdminUiText(String(state.events.filter((event) => ['error', 'warning'].includes(getEventSeverity(event))).length));
 }
 
 function renderThesisList() {
@@ -846,7 +901,7 @@ function renderThesisList() {
     return new Date(b.updatedAt) - new Date(a.updatedAt);
   });
 
-  thesisCountBadgeEl.textContent = `${items.length} tesi`;
+  thesisCountBadgeEl.textContent = normalizeAdminUiText(`${items.length} tesi`);
   thesisListEl.innerHTML = '';
   thesisEmptyEl.classList.toggle('hidden', items.length > 0);
 
@@ -856,15 +911,15 @@ function renderThesisList() {
     item.innerHTML = `
       <div class="thesis-item-top">
         <div>
-          <h3>${escapeHtml(thesis.title || 'Tesi senza titolo')}</h3>
-          <p>${escapeHtml(thesis.faculty || 'Facoltà non indicata')} · ${escapeHtml(thesis.course || 'Corso non indicato')}</p>
+          <h3>${escapeAdminUiHtml(thesis.title || 'Tesi senza titolo')}</h3>
+          <p>${escapeAdminUiHtml(thesis.faculty || 'Facolta non indicata')} - ${escapeAdminUiHtml(thesis.course || 'Corso non indicato')}</p>
         </div>
         <div class="item-badges">
           <span class="mini-badge${thesis.archived ? ' archived' : ''}">${thesis.archived ? 'Archiviata' : 'Attiva'}</span>
-          <span class="mini-badge">${escapeHtml(thesis.method || 'Teorica')}</span>
+          <span class="mini-badge">${escapeAdminUiHtml(thesis.method || 'Teorica')}</span>
         </div>
       </div>
-      <p class="topic-preview">${escapeHtml(thesis.topic || 'Nessun argomento')}</p>
+      <p class="topic-preview">${escapeAdminUiHtml(thesis.topic || 'Nessun argomento')}</p>
       <div class="thesis-item-footer">
         <span>Aggiornata: ${formatDate(thesis.updatedAt)}</span>
         <div class="row-actions">
@@ -880,7 +935,7 @@ function renderThesisList() {
 
 function renderWorkspace() {
   const thesis = getCurrentThesis();
-  const buttons = [
+  const workspaceControlButtons = [
     document.getElementById('workspace-save-btn'),
     document.getElementById('workspace-duplicate-btn'),
     document.getElementById('workspace-archive-btn'),
@@ -907,30 +962,35 @@ function renderWorkspace() {
   if (!thesis) {
     workspaceEmptyEl.classList.remove('hidden');
     workspacePanelEl.classList.add('hidden');
-    workspaceTitleEl.textContent = 'Workspace tesi';
-    workspaceSubtitleEl.textContent = 'Apri una tesi dall\'archivio per generare e revisionare i contenuti.';
-    workspaceThesisBadgeEl.textContent = 'Nessuna tesi';
+    workspaceTitleEl.textContent = normalizeAdminUiText('Workspace tesi');
+    workspaceSubtitleEl.textContent = normalizeAdminUiText('Apri una tesi dall\'archivio per generare e revisionare i contenuti.');
+    workspaceThesisBadgeEl.textContent = normalizeAdminUiText('Nessuna tesi');
     setSaveState('Nessuna tesi aperta', 'idle');
-    buttons.forEach((button) => { if (button) button.disabled = true; });
+    workspaceControlButtons.forEach((button) => { if (button) button.disabled = true; });
     renderRuntimeState();
     syncFacultyField(workspaceFacultySelectEl, workspaceFacultyCustomWrapEl, workspaceFacultyCustomEl, '');
     chapterSelectEl.innerHTML = '';
     outlineVersionSelectEl.innerHTML = '';
     abstractVersionSelectEl.innerHTML = '';
     chapterVersionSelectEl.innerHTML = '';
+    if (finalApparatusCardEl) finalApparatusCardEl.classList.add('hidden');
+    if (finalApparatusContentEl) finalApparatusContentEl.value = '';
+    if (finalApparatusStatusEl) finalApparatusStatusEl.textContent = normalizeAdminUiText('Fase finale non ancora salvata.');
+    if (workspacePhaseStatusEl) workspacePhaseStatusEl.textContent = normalizeAdminUiText('Fase corrente: Capitoli');
+    document.getElementById('thesis-finalize-btn')?.classList.add('hidden');
     logStatus('Nessuna operazione eseguita.');
     return;
   }
 
   workspaceEmptyEl.classList.add('hidden');
   workspacePanelEl.classList.remove('hidden');
-  buttons.forEach((button) => { if (button) button.disabled = false; });
+  workspaceControlButtons.forEach((button) => { if (button) button.disabled = false; });
 
-  workspaceTitleEl.textContent = thesis.title || 'Tesi senza titolo';
-  workspaceSubtitleEl.textContent = `${thesis.faculty || 'Facoltà'} · ${thesis.course || 'Corso'} · ${thesis.degreeType || ''}`;
-  workspaceThesisBadgeEl.textContent = thesis.archived ? 'Tesi archiviata' : 'Tesi attiva';
-  document.getElementById('workspace-archive-btn').textContent = thesis.archived ? 'Riattiva' : 'Archivia';
-  document.getElementById('tool-archive-current-btn').textContent = thesis.archived ? 'Riattiva tesi corrente' : 'Archivia tesi corrente';
+  workspaceTitleEl.textContent = normalizeAdminUiText(thesis.title || 'Tesi senza titolo');
+  workspaceSubtitleEl.textContent = normalizeAdminUiText(`${thesis.faculty || 'FacoltÃ '} Â· ${thesis.course || 'Corso'} Â· ${thesis.degreeType || ''}`);
+  workspaceThesisBadgeEl.textContent = normalizeAdminUiText(thesis.archived ? 'Tesi archiviata' : 'Tesi attiva');
+  document.getElementById('workspace-archive-btn').textContent = normalizeAdminUiText(thesis.archived ? 'Riattiva' : 'Archivia');
+  document.getElementById('tool-archive-current-btn').textContent = normalizeAdminUiText(thesis.archived ? 'Riattiva tesi corrente' : 'Archivia tesi corrente');
 
   Object.entries(workspaceFields).forEach(([key, field]) => {
     if (field && document.activeElement !== field) {
@@ -946,6 +1006,10 @@ function renderWorkspace() {
   abstractEl.value = thesis.abstract || '';
   renderChapterSelect(thesis);
   renderCurrentChapter(thesis);
+  renderChapterMutationControls(thesis);
+  renderWorkflowPhaseStatus(thesis);
+  renderFinalApparatusSection(thesis);
+  renderFinalizeThesisButton(thesis);
   renderVersionSelect(outlineVersionSelectEl, thesis.outlineVersions || []);
   renderVersionMeta(outlineVersionMetaEl, thesis.outlineVersions || []);
   renderVersionSelect(abstractVersionSelectEl, thesis.abstractVersions || []);
@@ -956,7 +1020,10 @@ function renderWorkspace() {
   const currentChapterText = thesis.chapters[thesis.currentChapterIndex]?.content || '';
   const chapterGenerateBtn = document.getElementById('chapter-generate-btn');
   if (chapterGenerateBtn) {
-    chapterGenerateBtn.textContent = getChapterGenerateButtonLabel(thesis, thesis.currentChapterIndex, currentChapterText);
+    const chapterLocked = isChapterEditingLocked(thesis);
+    chapterGenerateBtn.textContent = normalizeAdminUiText(getChapterGenerateButtonLabel(thesis, thesis.currentChapterIndex, currentChapterText));
+    chapterGenerateBtn.disabled = chapterLocked;
+    chapterGenerateBtn.title = chapterLocked ? 'Capitoli chiusi: la tesi e in fase finale.' : '';
   }
   if (!currentOperation) {
     const idleStatus = buildCurrentChapterIdleStatus(thesis, thesis.currentChapterIndex, currentChapterText);
@@ -973,10 +1040,714 @@ function renderChapterSelect(thesis) {
     const option = document.createElement('option');
     option.value = String(index);
     const realTitle = resolveChapterTitle(thesis, index);
-    option.textContent = `Capitolo ${index + 1} — ${realTitle}`;
+    option.textContent = normalizeAdminUiText(`Capitolo ${index + 1} - ${realTitle}`);
     if (index === thesis.currentChapterIndex) option.selected = true;
     chapterSelectEl.appendChild(option);
   });
+}
+
+function getPlannedChapterCount(thesis) {
+  return parseChapterTitles(thesis?.outline || '').length
+    || (Array.isArray(thesis?.chapterTitles) ? thesis.chapterTitles.length : 0)
+    || (Array.isArray(thesis?.chapters) ? thesis.chapters.length : 0);
+}
+
+function isLastPlannedChapter(thesis, chapterIndex) {
+  const plannedCount = getPlannedChapterCount(thesis);
+  return plannedCount > 0 && chapterIndex >= plannedCount - 1;
+}
+
+function getWorkflowState(thesis) {
+  if (!thesis || typeof thesis !== 'object') {
+    return { phase: 'chapters', chaptersCompletedAt: null, statusMessage: '' };
+  }
+  if (!thesis.workflowState || typeof thesis.workflowState !== 'object') {
+    thesis.workflowState = { phase: 'chapters', chaptersCompletedAt: null, statusMessage: '' };
+  }
+  if (!['chapters', 'finalization_pending', 'complete'].includes(thesis.workflowState.phase)) {
+    thesis.workflowState.phase = 'chapters';
+  }
+  thesis.workflowState.chaptersCompletedAt = thesis.workflowState.chaptersCompletedAt || null;
+  thesis.workflowState.statusMessage = String(thesis.workflowState.statusMessage || '').trim();
+  return thesis.workflowState;
+}
+
+const FINAL_SECTION_DEFINITIONS = [
+  { key: 'conclusions', title: 'Conclusioni', aliases: [] },
+  { key: 'bibliography', title: 'Bibliografia e riferimenti bibliografici', aliases: ['Bibliografia / riferimenti bibliografici', 'Bibliografia', 'Riferimenti bibliografici'] },
+  { key: 'legalReferences', title: 'Riferimenti normativi', aliases: ['Normativa', 'Fonti normative'] },
+  { key: 'sitography', title: 'Sitografia e fonti online', aliases: ['Sitografia / fonti online', 'Sitografia', 'Fonti online'] }
+];
+
+const FINAL_SECTION_PLACEHOLDER_PATTERN = /\b(?:da verificare|inserire fonti|fonti da inserire|fonti da verificare|test apparato finale|placeholder|todo|tbd|lorem ipsum|da completare|bibliografia da completare|sitografia da completare)\b/i;
+const FINAL_CONCLUSIONS_MIN_WORDS = 120;
+const FINAL_BIBLIOGRAPHY_MIN_WORDS = 12;
+
+function escapeFinalSectionRegex(value) {
+  return String(value || '').replace(/[.*+?^()|[\]\\]/g, '\\$&');
+}
+
+function getFinalSectionTitleVariants(definition) {
+  return [definition?.title, ...(Array.isArray(definition?.aliases) ? definition.aliases : [])]
+    .map((item) => String(item || '').trim())
+    .filter(Boolean);
+}
+
+function isFinalSectionHeadingLine(line) {
+  const normalizedLine = String(line || '').trim().toLowerCase();
+  if (!normalizedLine) return false;
+  return FINAL_SECTION_DEFINITIONS.some((definition) => getFinalSectionTitleVariants(definition).some((title) => title.toLowerCase() === normalizedLine));
+}
+
+function stripFinalSectionHeading(textValue, definition) {
+  let text = String(textValue || '').replace(/\r/g, '').trim();
+  const variants = getFinalSectionTitleVariants(definition).map((title) => escapeFinalSectionRegex(title));
+  if (!variants.length) return text;
+  const headingPattern = new RegExp('^(?:\\s*(?:' + variants.join('|') + ')\\s*)+', 'i');
+  let previous = null;
+  while (text && text !== previous) {
+    previous = text;
+    text = text.replace(headingPattern, '').replace(/^[:\\-\\u2013\\u2014\\s]+/, '').trim();
+  }
+  return text.replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function normalizeFinalSectionContent(key, value) {
+  const definition = FINAL_SECTION_DEFINITIONS.find((item) => item.key === key) || null;
+  const stripped = stripFinalSectionHeading(value, definition);
+  return String(stripped || '').replace(/\r/g, '').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function countTextWords(value) {
+  const matches = String(value || '').match(/[A-Za-z�-�0-9]+(?:['�-][A-Za-z�-�0-9]+)*/g);
+  return matches ? matches.length : 0;
+}
+
+function getMeaningfulFinalLines(value) {
+  return String(value || '')
+    .replace(/\r/g, '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line && !isFinalSectionHeadingLine(line));
+}
+
+function isPlaceholderOnlyFinalSection(value) {
+  const lines = getMeaningfulFinalLines(value);
+  return !!lines.length && lines.every((line) => FINAL_SECTION_PLACEHOLDER_PATTERN.test(line));
+}
+
+function isHeadingOnlyFinalSection(value) {
+  return !getMeaningfulFinalLines(value).length;
+}
+
+function isSubstantiveFinalSection(value, minWords = 1) {
+  const text = String(value || '').trim();
+  if (!text || isHeadingOnlyFinalSection(text) || isPlaceholderOnlyFinalSection(text)) return false;
+  if (FINAL_SECTION_PLACEHOLDER_PATTERN.test(text)) return false;
+  return countTextWords(text) >= minWords;
+}
+
+function buildFinalSectionsValidation(thesis) {
+  const current = thesis?.finalSections && typeof thesis.finalSections === 'object' ? thesis.finalSections : createEmptyFinalSections();
+  const sections = {
+    conclusions: cleanFinalSectionForOwnField('conclusions', current.conclusions),
+    bibliography: cleanFinalSectionForOwnField('bibliography', current.bibliography),
+    legalReferences: cleanFinalSectionForOwnField('legalReferences', current.legalReferences),
+    sitography: cleanFinalSectionForOwnField('sitography', current.sitography)
+  };
+  const issues = [];
+
+  if (!isSubstantiveFinalSection(sections.conclusions, FINAL_CONCLUSIONS_MIN_WORDS) || isLikelyTruncatedFinalText(sections.conclusions)) {
+    issues.push('Conclusioni assenti, troppo brevi, troncate o prive di contenuto sostanziale.');
+  }
+  if (!isSubstantiveFinalSection(sections.bibliography, FINAL_BIBLIOGRAPHY_MIN_WORDS)) {
+    issues.push('Bibliografia e riferimenti bibliografici assenti o non sostanziali.');
+  }
+  if (FINAL_SECTION_PLACEHOLDER_PATTERN.test(sections.conclusions) || FINAL_SECTION_PLACEHOLDER_PATTERN.test(sections.bibliography)) {
+    issues.push('La fase finale contiene placeholder o note provvisorie nelle sezioni obbligatorie.');
+  }
+  if (sections.legalReferences && !isSubstantiveFinalSection(sections.legalReferences, 4)) {
+    issues.push('Riferimenti normativi presenti ma non sostanziali.');
+  }
+  if (sections.sitography && !isSubstantiveFinalSection(sections.sitography, 4)) {
+    issues.push('Sitografia / fonti online presenti ma non sostanziali.');
+  }
+
+  return {
+    sections,
+    issues,
+    complete: issues.length === 0,
+    conclusionsValid: isSubstantiveFinalSection(sections.conclusions, FINAL_CONCLUSIONS_MIN_WORDS) && !isLikelyTruncatedFinalText(sections.conclusions),
+    bibliographyValid: isSubstantiveFinalSection(sections.bibliography, FINAL_BIBLIOGRAPHY_MIN_WORDS)
+  };
+}
+
+function looksLikeConclusionText(value) {
+  const text = String(value || '').trim();
+  if (!text) return false;
+  const first = text.split('\n').map((line) => line.trim()).find(Boolean) || '';
+  if (/^conclusioni\b/i.test(first)) return true;
+  if (/^(la ricerca condotta|il percorso teorico e argomentativo|l'analisi del quadro|l’esame del quadro|nei capitoli iniziali|la dissoluzione del soggetto|il vuoto di imputazione)/i.test(first)) return true;
+  return false;
+}
+
+function cleanFinalSectionForOwnField(key, value) {
+  const cleaned = cleanParsedFinalSectionValue(key, value);
+  if (!cleaned) return '';
+  if (key !== 'conclusions' && looksLikeConclusionText(cleaned)) return '';
+  return cleaned;
+}
+
+function getFinalSections(thesis) {
+  if (!thesis || typeof thesis !== 'object') return createEmptyFinalSections();
+  thesis.finalSections = normalizeFinalSections(thesis.finalSections, thesis.finalApparatus || '');
+  const normalizedSections = {
+    conclusions: cleanFinalSectionForOwnField('conclusions', thesis.finalSections.conclusions),
+    bibliography: cleanFinalSectionForOwnField('bibliography', thesis.finalSections.bibliography),
+    legalReferences: cleanFinalSectionForOwnField('legalReferences', thesis.finalSections.legalReferences),
+    sitography: cleanFinalSectionForOwnField('sitography', thesis.finalSections.sitography)
+  };
+  thesis.finalSections = normalizedSections;
+  return normalizedSections;
+}
+
+function serializeFinalSections(finalSections) {
+  const sections = normalizeFinalSections(finalSections, '');
+  return FINAL_SECTION_DEFINITIONS.map(({ key, title }) => {
+    const content = normalizeFinalSectionContent(key, sections[key]);
+    return content ? title + '\n' + content : '';
+  }).filter(Boolean).join('\n\n').trim();
+}
+
+function normalizeFinalHeadingCandidate(value) {
+  return String(value || '')
+    .replace(/^#{1,6}\s*/, '')
+    .replace(/^\d+[.)]\s*/, '')
+    .replace(/^[-–—•]\s*/, '')
+    .replace(/^\*\*(.*?)\*\*$/, '$1')
+    .replace(/^__(.*?)__$/, '$1')
+    .replace(/[:：]\s*$/, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function matchFinalSectionDefinition(trimmedLine) {
+  const normalizedLine = normalizeFinalHeadingCandidate(trimmedLine);
+  if (!normalizedLine) return null;
+  return FINAL_SECTION_DEFINITIONS.find((definition) =>
+    getFinalSectionTitleVariants(definition).some((title) => normalizeFinalHeadingCandidate(title) === normalizedLine)
+  ) || null;
+}
+
+function ensureConclusionsSectionText(value) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  const hasRecognizedFinalHeading = text.split('\n').some((line) => !!matchFinalSectionDefinition(String(line || '').trim()));
+  return hasRecognizedFinalHeading ? text : 'Conclusioni\n' + text;
+}
+
+function dedupeRepeatedFinalParagraphs(value) {
+  const text = String(value || '').replace(/\r/g, '').trim();
+  if (!text) return '';
+  const paragraphs = text.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
+  const seen = new Set();
+  const kept = [];
+  for (const paragraph of paragraphs) {
+    const key = paragraph
+      .toLowerCase()
+      .replace(/\s+/g, ' ')
+      .replace(/[.,;:!?'"“”‘’()\[\]{}«»]/g, '')
+      .slice(0, 260);
+    if (key && seen.has(key)) continue;
+    if (key) seen.add(key);
+    kept.push(paragraph);
+  }
+  return kept.join('\n\n').trim();
+}
+
+function isLikelyTruncatedFinalText(value) {
+  const text = String(value || '').trim();
+  if (!text) return false;
+  const tail = text.slice(-260).trim();
+  if (!tail) return false;
+  if (/[,:;\-–—]$/.test(tail)) return true;
+  if (!/[.!?…»”)]$/.test(tail)) return true;
+  if (/\b(che|di|del|della|dello|dei|degli|delle|a|ad|da|dal|dalla|dallo|dai|dagli|dalle|in|nel|nella|nello|nei|negli|nelle|con|su|sul|sulla|sullo|sui|sugli|sulle|per|tra|fra|come|quando|mentre|poiché|perché|se|ma|e|o)$/i.test(tail)) return true;
+  return false;
+}
+
+function cleanParsedFinalSectionValue(key, value) {
+  const content = normalizeFinalSectionContent(key, value);
+  if (!content) return '';
+  const deduped = dedupeRepeatedFinalParagraphs(content);
+  if (!deduped) return '';
+  if (isHeadingOnlyFinalSection(deduped) || isPlaceholderOnlyFinalSection(deduped)) return '';
+  if (key !== 'bibliography' && FINAL_SECTION_PLACEHOLDER_PATTERN.test(deduped)) return '';
+  return deduped;
+}
+
+function parseFinalSectionsText(textValue, fallbackSections = null) {
+  const fallback = normalizeFinalSections(fallbackSections || {}, '');
+  const normalizedText = String(textValue || '').replace(/\r/g, '').trim();
+  if (!normalizedText) return createEmptyFinalSections();
+
+  const sections = createEmptyFinalSections();
+  const lines = normalizedText.split('\n');
+  let currentKey = null;
+  let sawHeading = false;
+
+  for (const rawLine of lines) {
+    const line = String(rawLine || '');
+    const trimmed = line.trim();
+    const matchedDefinition = matchFinalSectionDefinition(trimmed);
+    if (matchedDefinition) {
+      currentKey = matchedDefinition.key;
+      sawHeading = true;
+      continue;
+    }
+    if (!currentKey) continue;
+    sections[currentKey] = sections[currentKey] ? sections[currentKey] + '\n' + line : line;
+  }
+
+  if (!sawHeading) {
+    return normalizeFinalSections({ ...fallback, bibliography: normalizedText }, '');
+  }
+
+  return normalizeFinalSections({
+    conclusions: cleanParsedFinalSectionValue('conclusions', sections.conclusions) || cleanParsedFinalSectionValue('conclusions', fallback.conclusions),
+    bibliography: cleanParsedFinalSectionValue('bibliography', sections.bibliography) || cleanParsedFinalSectionValue('bibliography', fallback.bibliography),
+    legalReferences: cleanParsedFinalSectionValue('legalReferences', sections.legalReferences) || cleanParsedFinalSectionValue('legalReferences', fallback.legalReferences),
+    sitography: cleanParsedFinalSectionValue('sitography', sections.sitography) || cleanParsedFinalSectionValue('sitography', fallback.sitography)
+  }, '');
+}
+
+function syncFinalConclusionsOnlyContent(thesis, preferredText = '') {
+  const parsed = parseFinalSectionsText(ensureConclusionsSectionText(preferredText), createEmptyFinalSections());
+  const current = getFinalSections(thesis);
+
+  const conclusions = cleanParsedFinalSectionValue('conclusions', parsed.conclusions);
+  const bibliography = isSubstantiveFinalSection(current.bibliography, FINAL_BIBLIOGRAPHY_MIN_WORDS)
+    ? cleanParsedFinalSectionValue('bibliography', current.bibliography)
+    : '';
+  const legalReferences = isSubstantiveFinalSection(current.legalReferences, 4)
+    ? cleanParsedFinalSectionValue('legalReferences', current.legalReferences)
+    : '';
+  const sitography = isSubstantiveFinalSection(current.sitography, 4)
+    ? cleanParsedFinalSectionValue('sitography', current.sitography)
+    : '';
+
+  thesis.finalSections = {
+    conclusions,
+    bibliography,
+    legalReferences,
+    sitography
+  };
+  thesis.finalApparatus = serializeFinalSections(thesis.finalSections);
+  return thesis.finalSections;
+}
+
+function syncFinalPhaseContent(thesis, preferredText = null) {
+  const currentSections = getFinalSections(thesis);
+  thesis.finalSections = typeof preferredText === 'string'
+    ? parseFinalSectionsText(preferredText, currentSections)
+    : normalizeFinalSections(currentSections, thesis.finalApparatus || '');
+  thesis.finalSections = {
+    conclusions: normalizeFinalSectionContent('conclusions', thesis.finalSections.conclusions),
+    bibliography: normalizeFinalSectionContent('bibliography', thesis.finalSections.bibliography),
+    legalReferences: normalizeFinalSectionContent('legalReferences', thesis.finalSections.legalReferences),
+    sitography: normalizeFinalSectionContent('sitography', thesis.finalSections.sitography)
+  };
+  thesis.finalApparatus = serializeFinalSections(thesis.finalSections);
+  return thesis.finalSections;
+}
+
+function getFinalApparatusText(thesis) {
+  if (!thesis) return '';
+  syncFinalPhaseContent(thesis);
+  return String(thesis.finalApparatus || '').trim();
+}
+
+function createEmptyFinalApprovals() {
+  return {
+    conclusions: false,
+    legalReferences: false,
+    bibliography: false,
+    sitography: false
+  };
+}
+
+function getFinalApprovals(thesis) {
+  if (!thesis || typeof thesis !== 'object') return createEmptyFinalApprovals();
+  const current = thesis.finalApprovals && typeof thesis.finalApprovals === 'object' ? thesis.finalApprovals : {};
+  thesis.finalApprovals = {
+    conclusions: current.conclusions === true,
+    legalReferences: current.legalReferences === true,
+    bibliography: current.bibliography === true,
+    sitography: current.sitography === true
+  };
+  return thesis.finalApprovals;
+}
+
+function getFinalSectionFieldElements() {
+  return {
+    conclusions: finalConclusionsContentEl,
+    legalReferences: finalLegalReferencesContentEl,
+    bibliography: finalBibliographyContentEl,
+    sitography: finalSitographyContentEl
+  };
+}
+
+function readFinalSectionFieldsFromDom() {
+  const fields = getFinalSectionFieldElements();
+  return {
+    conclusions: cleanParsedFinalSectionValue('conclusions', fields.conclusions?.value || ''),
+    legalReferences: cleanParsedFinalSectionValue('legalReferences', fields.legalReferences?.value || ''),
+    bibliography: cleanParsedFinalSectionValue('bibliography', fields.bibliography?.value || ''),
+    sitography: cleanParsedFinalSectionValue('sitography', fields.sitography?.value || '')
+  };
+}
+
+function writeFinalSectionFieldsToDom(sections) {
+  const fields = getFinalSectionFieldElements();
+  Object.entries(fields).forEach(([key, element]) => {
+    if (!element || document.activeElement === element) return;
+    element.value = String(sections[key] || '').trim();
+  });
+}
+
+function syncFinalSectionFieldsToState(thesis) {
+  if (!thesis) return createEmptyFinalSections();
+  thesis.finalSections = readFinalSectionFieldsFromDom();
+  thesis.finalApparatus = serializeFinalSections(thesis.finalSections);
+  return thesis.finalSections;
+}
+
+function areRequiredFinalSectionsApproved(thesis) {
+  const approvals = getFinalApprovals(thesis);
+  const validation = buildFinalSectionsValidation(thesis);
+  const sections = validation.sections;
+  return validation.complete
+    && approvals.conclusions === true
+    && approvals.bibliography === true
+    && (!sections.legalReferences || approvals.legalReferences === true)
+    && (!sections.sitography || approvals.sitography === true);
+}
+
+function setFinalBadge(element, approved, optional, hasContent) {
+  if (!element) return;
+  if (approved) {
+    element.textContent = hasContent ? 'Approvato' : (optional ? 'Omesso' : 'Approvato');
+    return;
+  }
+  element.textContent = optional ? (hasContent ? 'Da approvare' : 'Facoltativo') : 'Da completare';
+}
+
+function formatBibliographyLocally(value) {
+  const raw = String(value || '').replace(/\r/g, '').trim();
+  if (!raw) return '';
+  const items = raw
+    .split(/\n{1,}/)
+    .map((line) => line.trim())
+    .map((line) => line.replace(/^[-–—•*]\s+/, '').replace(/^\d+[.)]\s+/, '').trim())
+    .filter(Boolean);
+
+  const seen = new Set();
+  const cleaned = [];
+  for (const item of items) {
+    const key = item.toLowerCase().replace(/\s+/g, ' ').replace(/[.,;:]+$/g, '').trim();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    cleaned.push(item.replace(/\s+/g, ' ').trim());
+  }
+
+  return cleaned
+    .sort((a, b) => a.localeCompare(b, 'it', { sensitivity: 'base' }))
+    .map((item) => /[.!?]$/.test(item) ? item : item + '.')
+    .join('\n');
+}
+
+function cleanSourceLine(value) {
+  return String(value || '')
+    .replace(/^[-–—•*]\s+/, '')
+    .replace(/^\d+[.)]\s+/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function sourceDedupKey(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/[.,;:]+$/g, '')
+    .trim();
+}
+
+function isLikelyNormativeSource(value) {
+  const text = String(value || '').toLowerCase();
+  return /\bgdpr\b/.test(text)
+    || /\bai act\b/.test(text)
+    || /\bregolamento\b/.test(text)
+    || /\bdirettiva\b/.test(text)
+    || /\bdecreto\b/.test(text)
+    || /\blegge\b/.test(text)
+    || /\bcodice\b/.test(text)
+    || /\barticolo\b/.test(text)
+    || /\bart\.\b/.test(text)
+    || /\bsentenza\b/.test(text)
+    || /\bcorte\b/.test(text)
+    || /\bcostituzione\b/.test(text)
+    || /\bunione europea\b/.test(text)
+    || /\bue\b/.test(text);
+}
+
+function isLikelyIncompleteBibliographicSource(value) {
+  const text = String(value || '').trim();
+  if (!text) return false;
+  if (/^\[DA VERIFICARE/i.test(text)) return true;
+
+  const hasComma = text.includes(',');
+  const hasYear = /\b(19|20)\d{2}\b/.test(text);
+  const hasPublisherOrJournalSignal = /\b(press|publisher|journal|rivista|editore|edizioni|university|oxford|cambridge|springer|routledge|doi|isbn)\b/i.test(text);
+
+  return !(hasComma || hasYear || hasPublisherOrJournalSignal);
+}
+
+function normalizeSourceForOutput(value, type) {
+  const cleaned = cleanSourceLine(value).replace(/[.;]+$/g, '').trim();
+  if (!cleaned) return '';
+
+  if (type === 'bibliography' && isLikelyIncompleteBibliographicSource(cleaned)) {
+    return '[DA VERIFICARE - fonte incompleta] ' + cleaned + '.';
+  }
+
+  return cleaned + '.';
+}
+
+function analyzeAndFormatSourcesLocally(rawBibliography, rawLegalReferences) {
+  const allLines = [
+    ...String(rawBibliography || '').replace(/\r/g, '').split(/\n+/),
+    ...String(rawLegalReferences || '').replace(/\r/g, '').split(/\n+/)
+  ].map(cleanSourceLine).filter(Boolean);
+
+  const legal = [];
+  const bibliography = [];
+  const seenLegal = new Set();
+  const seenBibliography = new Set();
+
+  for (const line of allLines) {
+    const isNormative = isLikelyNormativeSource(line);
+    const normalized = normalizeSourceForOutput(line, isNormative ? 'legalReferences' : 'bibliography');
+    const key = sourceDedupKey(normalized);
+    if (!key) continue;
+
+    if (isNormative) {
+      if (!seenLegal.has(key)) {
+        seenLegal.add(key);
+        legal.push(normalized);
+      }
+    } else {
+      if (!seenBibliography.has(key)) {
+        seenBibliography.add(key);
+        bibliography.push(normalized);
+      }
+    }
+  }
+
+  return {
+    legalReferences: legal.sort((a, b) => a.localeCompare(b, 'it', { sensitivity: 'base' })).join('\n'),
+    bibliography: bibliography.sort((a, b) => a.localeCompare(b, 'it', { sensitivity: 'base' })).join('\n')
+  };
+}
+
+function hasIncompleteBibliographyMarkers(value) {
+  return /\[DA VERIFICARE\s*-\s*fonte incompleta\]/i.test(String(value || ''));
+}
+
+function approveFinalSection(key) {
+  const thesis = getCurrentThesis();
+  if (!thesis) return;
+  syncFinalSectionFieldsToState(thesis);
+  const validation = buildFinalSectionsValidation(thesis);
+  const sections = validation.sections;
+  const approvals = getFinalApprovals(thesis);
+
+  if (key === 'conclusions' && !validation.conclusionsValid) {
+    showToast('Conclusioni non approvabili: testo assente, breve o troncato.', true);
+    return;
+  }
+
+  if (key === 'bibliography' && (!validation.bibliographyValid || hasIncompleteBibliographyMarkers(sections.bibliography))) {
+    showToast('Bibliografia non approvabile: completare o rimuovere le fonti marcate come DA VERIFICARE.', true);
+    return;
+  }
+
+  if (key === 'legalReferences' && sections.legalReferences && !isSubstantiveFinalSection(sections.legalReferences, 4)) {
+    showToast('Riferimenti normativi presenti ma non sostanziali.', true);
+    return;
+  }
+
+  if (key === 'sitography' && sections.sitography && !isSubstantiveFinalSection(sections.sitography, 4)) {
+    showToast('Sitografia presente ma non sostanziale.', true);
+    return;
+  }
+
+  approvals[key] = true;
+  thesis.updatedAt = new Date().toISOString();
+  persistState();
+  renderWorkspace();
+  renderThesisList();
+  appendEvent('final_section_approve', 'Sezione finale approvata', { thesisId: thesis.id, section: key });
+  showToast('Sezione finale approvata.');
+}
+
+function hasFinalApparatus(thesis) {
+  const sections = getFinalSections(thesis);
+  return FINAL_SECTION_DEFINITIONS.some(({ key }) => !!String(sections[key] || '').trim());
+}
+
+function hasRequiredFinalSections(thesis) {
+  return buildFinalSectionsValidation(thesis).complete;
+}
+
+function areAllPlannedChaptersComplete(thesis) {
+  const plannedCount = getPlannedChapterCount(thesis);
+  if (!plannedCount) return false;
+  for (let index = 0; index < plannedCount; index += 1) {
+    const report = analyzeChapterCompleteness(thesis, index, thesis?.chapters?.[index]?.content || '');
+    if (!report.complete) return false;
+  }
+  return true;
+}
+
+function syncWorkflowState(thesis) {
+  const workflowState = getWorkflowState(thesis);
+  if (!areAllPlannedChaptersComplete(thesis)) {
+    workflowState.phase = 'chapters';
+    workflowState.chaptersCompletedAt = null;
+    workflowState.statusMessage = '';
+    return workflowState;
+  }
+  syncFinalPhaseContent(thesis);
+  const finalValidation = buildFinalSectionsValidation(thesis);
+  if ((workflowState.phase === 'complete' || thesis?.completedAt) && !finalValidation.complete) {
+    workflowState.phase = 'finalization_pending';
+    workflowState.statusMessage = 'Fase finale incompleta: servono conclusioni e riferimenti finali sostanziali prima dell export finale.';
+  }
+  return workflowState;
+}
+
+function isThesisFinalCompletionMarked(thesis) {
+  const workflowState = syncWorkflowState(thesis);
+  return workflowState.phase === 'complete' && Boolean(thesis?.completedAt) && buildFinalSectionsValidation(thesis).complete;
+}
+
+function markFinalChapterApproved(thesis) {
+  const workflowState = getWorkflowState(thesis);
+  workflowState.phase = 'finalization_pending';
+  workflowState.chaptersCompletedAt = new Date().toISOString();
+  workflowState.statusMessage = 'Capitolo finale approvato. Procedere con conclusioni e riferimenti finali della tesi.';
+}
+
+function finalizeThesis(thesis) {
+  const workflowState = getWorkflowState(thesis);
+  workflowState.phase = 'complete';
+  workflowState.statusMessage = 'Tesi finalizzata. Export finale cliente abilitato.';
+  thesis.completedAt = new Date().toISOString();
+}
+
+function canFinalizeThesis(thesis) {
+  const workflowState = syncWorkflowState(thesis);
+  return workflowState.phase === 'finalization_pending' && areAllPlannedChaptersComplete(thesis) && buildFinalSectionsValidation(thesis).complete;
+}
+
+function isChapterEditingLocked(thesis) {
+  const workflowState = getWorkflowState(thesis);
+  return workflowState.phase === 'finalization_pending' || workflowState.phase === 'complete' || Boolean(thesis?.completedAt);
+}
+
+function isThesisGenerationLocked(thesis) {
+  return isChapterEditingLocked(thesis);
+}
+
+function clearFinalPhaseState(thesis) {
+  const workflowState = getWorkflowState(thesis);
+  workflowState.phase = 'chapters';
+  workflowState.chaptersCompletedAt = null;
+  workflowState.statusMessage = '';
+}
+
+function renderWorkflowPhaseStatus(thesis) {
+  if (!workspacePhaseStatusEl) return;
+  const workflowState = syncWorkflowState(thesis);
+  if (workflowState.phase === 'finalization_pending') {
+    workspacePhaseStatusEl.textContent = normalizeAdminUiText('Fase finale: sezioni finali separate');
+    return;
+  }
+  if (workflowState.phase === 'complete' || thesis?.completedAt) {
+    workspacePhaseStatusEl.textContent = normalizeAdminUiText('Fase corrente: Tesi completa finale');
+    return;
+  }
+  workspacePhaseStatusEl.textContent = normalizeAdminUiText('Fase corrente: Capitoli');
+}
+
+function renderFinalizeThesisButton(thesis) {
+  const finalizeBtn = document.getElementById('thesis-finalize-btn');
+  if (!finalizeBtn) return;
+  const workflowState = syncWorkflowState(thesis);
+  const finalValidation = buildFinalSectionsValidation(thesis);
+  const showButton = workflowState.phase === 'finalization_pending';
+  finalizeBtn.classList.toggle('hidden', !showButton);
+  finalizeBtn.disabled = showButton ? !canFinalizeThesis(thesis) : true;
+  finalizeBtn.title = showButton && !finalValidation.complete
+    ? normalizeAdminUiText(finalValidation.issues.join(' '))
+    : '';
+}
+
+function renderFinalApparatusSection(thesis) {
+  if (!finalApparatusCardEl || !finalApparatusStatusEl) return;
+  const workflowState = syncWorkflowState(thesis);
+  const shouldShow = workflowState.phase === 'finalization_pending' || workflowState.phase === 'complete' || Boolean(thesis?.completedAt);
+  finalApparatusCardEl.classList.toggle('hidden', !shouldShow);
+  if (!shouldShow) return;
+
+  const sections = getFinalSections(thesis);
+  const approvals = getFinalApprovals(thesis);
+  writeFinalSectionFieldsToDom(sections);
+
+  const validation = buildFinalSectionsValidation(thesis);
+
+  setFinalBadge(finalConclusionsBadgeEl, approvals.conclusions, false, !!sections.conclusions);
+  setFinalBadge(finalLegalReferencesBadgeEl, approvals.legalReferences, true, !!sections.legalReferences);
+  setFinalBadge(finalBibliographyBadgeEl, approvals.bibliography, false, !!sections.bibliography);
+  setFinalBadge(finalSitographyBadgeEl, approvals.sitography, true, !!sections.sitography);
+
+  if (finalConclusionsApproveBtnEl) {
+    finalConclusionsApproveBtnEl.disabled = approvals.conclusions === true;
+    finalConclusionsApproveBtnEl.textContent = approvals.conclusions ? 'Conclusioni approvate' : 'Approva conclusioni';
+  }
+  if (finalBibliographyApproveBtnEl) {
+    finalBibliographyApproveBtnEl.disabled = approvals.bibliography === true;
+    finalBibliographyApproveBtnEl.textContent = approvals.bibliography ? 'Bibliografia approvata' : 'Approva bibliografia';
+  }
+  if (finalLegalReferencesApproveBtnEl) {
+    finalLegalReferencesApproveBtnEl.disabled = approvals.legalReferences === true;
+    finalLegalReferencesApproveBtnEl.textContent = approvals.legalReferences
+      ? (sections.legalReferences ? 'Riferimenti normativi approvati' : 'Riferimenti normativi omessi')
+      : 'Approva / ometti riferimenti normativi';
+  }
+  if (finalSitographyApproveBtnEl) {
+    finalSitographyApproveBtnEl.disabled = approvals.sitography === true;
+    finalSitographyApproveBtnEl.textContent = approvals.sitography
+      ? (sections.sitography ? 'Sitografia approvata' : 'Sitografia omessa')
+      : 'Approva / ometti sitografia';
+  }
+
+  finalApparatusStatusEl.textContent = normalizeAdminUiText(isThesisFinalCompletionMarked(thesis)
+    ? 'Tesi finalizzata.'
+    : areRequiredFinalSectionsApproved(thesis)
+      ? 'Sezioni finali approvate. È possibile finalizzare la tesi.'
+      : 'Fase finale in corso: approvare Conclusioni e Bibliografia; Riferimenti normativi e Sitografia solo se presenti.');
 }
 
 function renderCurrentChapter(thesis) {
@@ -994,27 +1765,71 @@ function renderCurrentChapter(thesis) {
   chapterContentEl.value = chapter.content || '';
   renderVersionSelect(chapterVersionSelectEl, chapter.versions || []);
   renderVersionMeta(chapterVersionMetaEl, chapter.versions || []);
-  // Mostra approva solo se capitolo ha contenuto e non è l'ultimo
   const hasContent = !!String(chapter.content || '').trim();
-  const plannedCount = parseChapterTitles(thesis.outline || '').length || (thesis.chapterTitles || []).length || thesis.chapters.length;
-  const isLast = thesis.currentChapterIndex >= plannedCount - 1;
-  if (approveBtn) approveBtn.classList.toggle('hidden', !hasContent || isLast);
+  const isLast = isLastPlannedChapter(thesis, thesis.currentChapterIndex);
+  const chapterIsComplete = analyzeChapterCompleteness(thesis, thesis.currentChapterIndex, chapter.content || '').complete;
+  const workflowState = syncWorkflowState(thesis);
+  const chapterLocked = isChapterEditingLocked(thesis);
+  const thesisFinalized = isThesisFinalCompletionMarked(thesis);
+  if (approveBtn) {
+    approveBtn.textContent = normalizeAdminUiText(isLast ? 'Approva capitolo finale' : 'Approva - capitolo successivo');
+    approveBtn.classList.toggle('hidden', isLast ? (!chapterIsComplete || workflowState.phase === 'finalization_pending' || thesisFinalized) : !hasContent);
+    approveBtn.disabled = chapterLocked || (isLast ? !chapterIsComplete : !hasContent);
+    approveBtn.title = chapterLocked ? 'Capitoli chiusi: la tesi e in fase finale.' : '';
+  }
 }
 
+
+function renderChapterMutationControls(thesis) {
+  const locked = isChapterEditingLocked(thesis);
+  const lockTitle = locked ? 'Capitoli chiusi: in fase finale sono consentite solo lettura, copia ed export.' : '';
+  const controls = [
+    'chapter-generate-btn',
+    'chapter-approve-btn',
+    'chapter-notes-btn',
+    'chapter-harmonize-btn',
+    'chapter-review-submit-btn',
+    'chapter-tutor-toggle-btn',
+    'chapter-tutor-submit-btn',
+    'chapter-clear-btn',
+    'chapter-save-version-btn',
+    'chapter-restore-btn',
+    'chapter-add-btn',
+    'chapter-remove-btn'
+  ];
+  controls.forEach((id) => {
+    const element = document.getElementById(id);
+    if (!element) return;
+    element.disabled = locked;
+    element.title = locked ? lockTitle : '';
+  });
+  if (chapterTitleEl) chapterTitleEl.readOnly = locked;
+  if (chapterContentEl) chapterContentEl.readOnly = locked;
+  if (chapterReviewNotesEl) chapterReviewNotesEl.disabled = locked;
+  if (chapterTutorNotesEl) chapterTutorNotesEl.disabled = locked;
+  ['chapter-tutor-extracts', 'chapter-tutor-authors', 'chapter-tutor-sections'].forEach((id) => {
+    const element = document.getElementById(id);
+    if (element) element.disabled = locked;
+  });
+  if (locked) {
+    chapterReviewBox?.classList.add('hidden');
+    chapterTutorBox?.classList.add('hidden');
+  }
+}
 
 function renderVersionSelect(selectEl, versions) {
   selectEl.innerHTML = '';
   if (!versions.length) {
     const option = document.createElement('option');
     option.value = '';
-    option.textContent = 'Nessuna versione salvata';
+    option.textContent = normalizeAdminUiText('Nessuna versione salvata');
     selectEl.appendChild(option);
     return;
   }
   versions.forEach((version) => {
     const option = document.createElement('option');
     option.value = version.id;
-    option.textContent = `${version.label} · ${formatDate(version.createdAt)}`;
+    option.textContent = normalizeAdminUiText(`${version.label} Â· ${formatDate(version.createdAt)}`);
     selectEl.appendChild(option);
   });
 }
@@ -1036,18 +1851,18 @@ function renderEvents() {
     item.className = 'event-item';
     item.innerHTML = `
       <div class="event-headline">
-        <strong>${escapeHtml(event.message)}</strong>
-        <span class="event-time">${escapeHtml(formatDate(event.createdAt))}</span>
+        <strong>${escapeAdminUiHtml(event.message)}</strong>
+        <span class="event-time">${escapeAdminUiHtml(formatDate(event.createdAt))}</span>
       </div>
       <div class="event-badges-row">
-        <span class="severity-badge ${escapeHtml(severity)}">${escapeHtml(getSeverityLabel(severity))}</span>
-        <span class="event-type">${escapeHtml(event.type || 'generic')}</span>
-        ${thesis?.title ? `<span class="event-thesis-label">${escapeHtml(thesis.title)}</span>` : ''}
+        <span class="severity-badge ${escapeAdminUiHtml(severity)}">${escapeAdminUiHtml(getSeverityLabel(severity))}</span>
+        <span class="event-type">${escapeAdminUiHtml(event.type || 'generic')}</span>
+        ${thesis?.title ? `<span class="event-thesis-label">${escapeAdminUiHtml(thesis.title)}</span>` : ''}
       </div>
-      ${event?.payload?.error ? `<div class="event-note">Errore: ${escapeHtml(event.payload.error)}</div>` : ''}
+      ${event?.payload?.error ? `<div class="event-note">Errore: ${escapeAdminUiHtml(event.payload.error)}</div>` : ''}
       <details class="event-details">
         <summary>Apri dettaglio evento</summary>
-        <pre>${escapeHtml(payloadText)}</pre>
+        <pre>${escapeAdminUiHtml(payloadText)}</pre>
       </details>`;
     eventsListEl.appendChild(item);
   }
@@ -1058,7 +1873,7 @@ function scheduleAutosave() {
     pendingAutosaveAfterOperation = true;
     return;
   }
-  setSaveState('Salvataggio in corso…', 'pending');
+  setSaveState('Salvataggio in corsoâ€¦', 'pending');
   clearTimeout(autosaveTimer);
   autosaveTimer = setTimeout(() => {
     persistState('saved');
@@ -1076,22 +1891,16 @@ function saveWorkspaceFieldsToState(options = {}) {
   thesis.abstract = abstractEl.value;
   ensureChapterCount(thesis, Math.max(thesis.chapters.length, thesis.chapterTitles.length || 1));
   const currentChapter = thesis.chapters[thesis.currentChapterIndex];
-  if (currentChapter) {
+  if (currentChapter && !isChapterEditingLocked(thesis)) {
     currentChapter.content = chapterContentEl.value;
-    // Aggiorna il titolo SOLO se il campo contiene un valore non generico.
-    // Evita di sovrascrivere titoli reali con "Capitolo N" quando il campo
-    // viene re-renderizzato prima che l'utente abbia digitato qualcosa.
     const fieldTitle = chapterTitleEl.value.trim();
-    const isGenericTitle = /^Capitolo\s+\d+$/i.test(fieldTitle);
+    const isGenericTitle = /^Capitolos+d+$/i.test(fieldTitle);
     if (fieldTitle && !isGenericTitle) {
       currentChapter.title = fieldTitle;
       thesis.chapterTitles[thesis.currentChapterIndex] = fieldTitle;
     } else if (!fieldTitle) {
-      // Campo vuoto: mantieni il titolo già memorizzato, non cancellarlo
       chapterTitleEl.value = currentChapter.title || '';
     }
-    // Se il titolo è generico, non aggiornare: l'indice approvato ha già
-    // impostato un titolo reale tramite applyOutlineToThesis.
   }
   thesis.updatedAt = new Date().toISOString();
   renderThesisList();
@@ -1175,7 +1984,20 @@ function duplicateThesis(id) {
 }
 
 function buildExportReadiness(thesis) {
-  return getThesisCompletionReport(thesis);
+  const report = getThesisCompletionReport(thesis);
+  const issues = [...report.issues];
+  const finalValidation = buildFinalSectionsValidation(thesis);
+  if (!finalValidation.complete) {
+    issues.unshift(...finalValidation.issues);
+  }
+  if (report.complete && !isThesisFinalCompletionMarked(thesis)) {
+    issues.unshift('Capitoli completati, ma la tesi non risulta completa: manca una fase finale accademica valida e la finalizzazione conclusiva.');
+  }
+  return {
+    ...report,
+    complete: report.complete && finalValidation.complete && isThesisFinalCompletionMarked(thesis),
+    issues
+  };
 }
 
 function analyzeProgressiveChapterState(thesis, chapterIndex, chapterText) {
@@ -1248,6 +2070,13 @@ function hasPartialChapterDraft(thesis, chapterIndex, chapterText) {
 }
 
 function buildCurrentChapterIdleStatus(thesis, chapterIndex, chapterText) {
+  const workflowState = syncWorkflowState(thesis);
+  if (workflowState.phase === 'finalization_pending') {
+    return {
+      message: 'Capitoli completati. Fase finale attiva.',
+      detail: workflowState.statusMessage || 'Procedere con conclusioni e riferimenti finali della tesi.'
+    };
+  }
   const chapterNumber = chapterIndex + 1;
   const progress = analyzeProgressiveChapterState(thesis, chapterIndex, chapterText);
   if (!String(chapterText || '').trim()) {
@@ -1386,8 +2215,8 @@ function buildThesisExportPayload(thesis) {
   const chapters = Array.isArray(prepared?.chapters) ? prepared.chapters : [];
   const text = [
     prepared?.title || 'Tesi senza titolo',
-    `${thesis?.faculty || '—'} · ${thesis?.course || '—'} · ${thesis?.degreeType || '—'}`,
-    `Metodo: ${thesis?.method || '—'}`,
+    `${thesis?.faculty || 'â€”'} Â· ${thesis?.course || 'â€”'} Â· ${thesis?.degreeType || 'â€”'}`,
+    `Metodo: ${thesis?.method || 'â€”'}`,
     '',
     statusBlock,
     '',
@@ -1400,7 +2229,7 @@ function buildThesisExportPayload(thesis) {
     'ABSTRACT',
     prepared?.abstract || '',
     '',
-    ...chapters.flatMap((chapter, index) => [`CAPITOLO ${index + 1} — ${chapter?.title || `Capitolo ${index + 1}`}`, chapter?.content || '', ''])
+    ...chapters.flatMap((chapter, index) => [`CAPITOLO ${index + 1} â€” ${chapter?.title || `Capitolo ${index + 1}`}`, chapter?.content || '', ''])
   ].join('\n');
 
   return {
@@ -1428,7 +2257,7 @@ function buildAcademicHtmlExport(thesis) {
   const chapters = Array.isArray(prepared?.chapters) ? prepared.chapters : [];
   const chaptersHtml = chapters.map((chapter, index) => `
 <section class="chapter-block">
-  <h2>Capitolo ${index + 1} — ${escapeHtml(chapter?.title || `Capitolo ${index + 1}`)}</h2>
+  <h2>Capitolo ${index + 1} â€” ${escapeHtml(chapter?.title || `Capitolo ${index + 1}`)}</h2>
   <div class="chapter-text">${escapeHtml(chapter?.content || '').replace(/\n/g, '<br />')}</div>
 </section>`).join('');
 
@@ -1457,18 +2286,18 @@ function buildAcademicHtmlExport(thesis) {
   <section class="cover">
     <div class="section-label">AccademIA Admin Desktop</div>
     <h1>${escapeHtml(thesis?.title || 'Tesi senza titolo')}</h1>
-    <p class="meta"><strong>Facoltà:</strong> ${escapeHtml(thesis?.faculty || '—')}</p>
-    <p class="meta"><strong>Corso di laurea:</strong> ${escapeHtml(thesis?.course || '—')}</p>
-    <p class="meta"><strong>Tipo laurea:</strong> ${escapeHtml(thesis?.degreeType || '—')}</p>
-    <p class="meta"><strong>Metodo:</strong> ${escapeHtml(thesis?.method || '—')}</p>
+    <p class="meta"><strong>FacoltÃ :</strong> ${escapeHtml(thesis?.faculty || 'â€”')}</p>
+    <p class="meta"><strong>Corso di laurea:</strong> ${escapeHtml(thesis?.course || 'â€”')}</p>
+    <p class="meta"><strong>Tipo laurea:</strong> ${escapeHtml(thesis?.degreeType || 'â€”')}</p>
+    <p class="meta"><strong>Metodo:</strong> ${escapeHtml(thesis?.method || 'â€”')}</p>
   </section>
   ${statusHtml}
   <div class="section-label">Argomento</div>
-  <div class="block">${escapeHtml(thesis?.topic || '').replace(/\n/g, '<br />') || '—'}</div>
+  <div class="block">${escapeHtml(thesis?.topic || '').replace(/\n/g, '<br />') || 'â€”'}</div>
   <div class="section-label">Indice</div>
-  <div class="block">${escapeHtml(thesis?.outline || '').replace(/\n/g, '<br />') || '—'}</div>
+  <div class="block">${escapeHtml(thesis?.outline || '').replace(/\n/g, '<br />') || 'â€”'}</div>
   <div class="section-label">Abstract</div>
-  <div class="block">${escapeHtml(thesis?.abstract || '').replace(/\n/g, '<br />') || '—'}</div>
+  <div class="block">${escapeHtml(thesis?.abstract || '').replace(/\n/g, '<br />') || 'â€”'}</div>
   ${chaptersHtml || '<div class="section-label">Capitoli</div><div class="block">Nessun capitolo disponibile.</div>'}
 </body>
 </html>`;
@@ -1517,10 +2346,10 @@ async function runFinalGlobalRevision() {
     showToast('Apri prima una tesi.', true);
     return;
   }
-  const report = buildExportReadiness(thesis);
+  const report = getThesisCompletionReport(thesis);
   if (!report.complete) {
-    const detail = `La revisione finale globale richiede una tesi completa.\n\n${report.issues.slice(0, 8).join('\n')}`;
-    appendEvent('generation_error', 'Revisione finale globale bloccata: tesi incompleta', { thesisId: thesis.id, issues: report.issues });
+    const detail = `La revisione finale globale richiede tutti i capitoli completi.\n\n${report.issues.slice(0, 8).join('\n')}`;
+    appendEvent('generation_error', 'Revisione finale globale bloccata: capitoli incompleti', { thesisId: thesis.id, issues: report.issues });
     showToast(detail, true);
     return;
   }
@@ -1610,8 +2439,8 @@ async function exportCurrentThesisDocx() {
     if (!confirmDraftExport('DOCX', payload.report)) return;
     const result = await exportThesisDocx(payload.prepared, `${payload.baseName}.docx`);
     if (!result?.ok) return;
-    appendEvent('export', payload.report.complete ? 'Esportata tesi corrente in DOCX' : 'Esportata bozza parziale in DOCX', { thesisId: thesis.id, format: 'docx', filePath: result.filePath, complete: payload.report.complete, severity: 'info' });
-    showToast(payload.report.complete ? 'Tesi esportata in DOCX.' : 'Bozza parziale esportata in DOCX.');
+    appendEvent('export', payload.report.complete ? 'Esportata tesi corrente in DOCX' : 'Esportata bozza parziale in DOCX', { thesisId: thesis.id, format: 'docx', filePath: result.filePath, complete: payload.report.complete, severity: 'info', alternateUsed: Boolean(result.alternateUsed) });
+    showToast(result?.alternateUsed ? 'File gia aperto o bloccato: salvato con nome alternativo.' : (payload.report.complete ? 'Tesi esportata in DOCX.' : 'Bozza parziale esportata in DOCX.'));
   } catch (error) {
     showToast(error?.message || 'Errore export DOCX.', true);
   }
@@ -1665,21 +2494,35 @@ function buildClientChapterDocxPayload(thesis) {
   };
 }
 
+function sanitizeFinalSectionForExport(key, content) {
+  return normalizeFinalSectionContent(key, content)
+    .replace(FINAL_SECTION_PLACEHOLDER_PATTERN, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 function buildClientFullDocxPayload(thesis) {
   const fullPrepared = prepareThesisForExport(thesis);
   const report = buildExportReadiness(fullPrepared);
   if (!report.complete) {
-    throw new Error('La tesi non ? completa: export cliente completo bloccato.');
+    throw new Error('La tesi non risulta completa: export cliente completo bloccato.');
   }
   const prepared = preparePresentableThesisForExport(thesis);
+  const finalValidation = buildFinalSectionsValidation(thesis);
   const chapterSections = (Array.isArray(prepared.chapters) ? prepared.chapters : []).map((chapter, index) => {
     const chapterNumber = chapter?.exportChapterNumber || index + 1;
     return {
-      title: 'Capitolo ' + chapterNumber + ' ? ' + (chapter?.title || ('Capitolo ' + chapterNumber)),
+      title: 'Capitolo ' + chapterNumber + ' - ' + (chapter?.title || ('Capitolo ' + chapterNumber)),
       content: chapter?.content || '',
       pageBreakBefore: true
     };
   });
+  const thesisFinalSections = [
+    { title: 'Conclusioni', content: sanitizeFinalSectionForExport('conclusions', finalValidation.sections.conclusions || ''), pageBreakBefore: true },
+    { title: 'Bibliografia e riferimenti bibliografici', content: sanitizeFinalSectionForExport('bibliography', finalValidation.sections.bibliography || ''), pageBreakBefore: true },
+    ...(String(finalValidation.sections.legalReferences || '').trim() ? [{ title: 'Riferimenti normativi', content: sanitizeFinalSectionForExport('legalReferences', finalValidation.sections.legalReferences), pageBreakBefore: true }] : []),
+    ...(String(finalValidation.sections.sitography || '').trim() ? [{ title: 'Sitografia e fonti online', content: sanitizeFinalSectionForExport('sitography', finalValidation.sections.sitography), pageBreakBefore: true }] : [])
+  ];
   return {
     documentTitle: thesis.title || 'Tesi senza titolo',
     defaultFileName: buildClientDocxBaseName(thesis, 'tesi-completa-cliente'),
@@ -1687,7 +2530,8 @@ function buildClientFullDocxPayload(thesis) {
     sections: [
       { title: 'Indice', content: prepared.outline || '?', pageBreakBefore: false },
       { title: 'Abstract', content: prepared.abstract || '?', pageBreakBefore: true },
-      ...chapterSections
+      ...chapterSections,
+      ...thesisFinalSections
     ]
   };
 }
@@ -1700,8 +2544,8 @@ async function exportClientDocxDocument(payload, successMessage, eventMessage, e
   }
   const result = await exportCustomDocx(payload);
   if (!result?.ok) return;
-  appendEvent('export', eventMessage, { thesisId: thesis.id, format: 'docx-client', filePath: result.filePath, severity: 'info', ...extra });
-  showToast(successMessage);
+  appendEvent('export', eventMessage, { thesisId: thesis.id, format: 'docx-client', filePath: result.filePath, severity: 'info', alternateUsed: Boolean(result.alternateUsed), ...extra });
+  showToast(result?.alternateUsed ? 'File gia aperto o bloccato: salvato con nome alternativo.' : successMessage);
 }
 
 async function exportClientOutlineDocx() {
@@ -1769,17 +2613,20 @@ function getSelectedVersion(list, selectEl) {
 
 function getTaskTimeout(taskName) {
   const baseTimeout = Number(state.settings.timeoutMs || 180000) || 180000;
-  const heavyTasks = new Set(['chapter_draft', 'chapter_review', 'tutor_revision', 'revisione_relatore', 'revisione_capitolo']);
+  const heavyTasks = new Set(['chapter_draft', 'chapter_review', 'thesis_final_sections', 'tutor_revision', 'revisione_relatore', 'revisione_capitolo']);
   if (heavyTasks.has(taskName)) return Math.max(baseTimeout, 240000);
   return Math.max(baseTimeout, 120000);
 }
 
 function ensureWritableChapter(thesis) {
+  if (isChapterEditingLocked(thesis)) {
+    throw new Error('Capitoli chiusi: in fase finale non sono consentite modifiche o nuove generazioni di capitolo.');
+  }
   if (!Array.isArray(thesis.chapters) || !thesis.chapters.length) {
     ensureChapterCount(thesis, 1);
   }
   if (!thesis.chapterTitles[thesis.currentChapterIndex]) {
-    thesis.chapterTitles[thesis.currentChapterIndex] = `Capitolo ${thesis.currentChapterIndex + 1}`;
+    thesis.chapterTitles[thesis.currentChapterIndex] = 'Capitolo ' + (thesis.currentChapterIndex + 1);
   }
 }
 
@@ -1794,7 +2641,7 @@ async function runTask(taskName, buildPromptFn, applyFn, options = {}) {
       ensureWritableChapter(thesis);
     }
     const prompt = buildPromptFn(thesis);
-    const started = await startOperation(options.statusLabel || `Operazione in corso: ${taskName}`, options.initialDetail || 'Connessione al provider in corso…', taskName);
+    const started = await startOperation(options.statusLabel || `Operazione in corso: ${taskName}`, options.initialDetail || 'Connessione al provider in corsoâ€¦', taskName);
     if (!started) return;
     const input = buildStructuredTaskInput(thesis, taskName, prompt, { chapterIndex: thesis.currentChapterIndex });
     const result = await callTaskApi(taskName, input, state.settings, { timeoutMs: getTaskTimeout(taskName) });
@@ -1809,7 +2656,7 @@ async function runTask(taskName, buildPromptFn, applyFn, options = {}) {
     const detail = error.message || 'Errore operazione.';
     appendEvent('generation_error', 'Errore operazione provider', { thesisId: thesis.id, task: taskName, error: detail });
     const hint = taskName === 'chapter_draft' && /timeout/i.test(detail)
-      ? 'Il capitolo richiede più tempo del previsto. Prova ad aumentare il timeout base nella sezione Provider e Prompt.'
+      ? 'Il capitolo richiede piÃ¹ tempo del previsto. Prova ad aumentare il timeout base nella sezione Provider e Prompt.'
       : detail;
     await finishOperation('Errore operazione', 'error', hint);
     showToast(detail || 'Errore operazione.', true);
@@ -1871,7 +2718,7 @@ function bindWorkspaceAutosave() {
   });
 }
 
-buttons.forEach((button) => button.addEventListener('click', () => setView(button.dataset.view)));
+sidebarButtons.forEach((button) => button.addEventListener('click', () => setView(button.dataset.view)));
 
 document.querySelectorAll('.quick-action').forEach((button) => {
   button.addEventListener('click', () => {
@@ -1946,7 +2793,7 @@ document.getElementById('outline-generate-btn').addEventListener('click', () => 
   'outline_draft',
   (thesis) => promptOutline(thesis),
   (thesis, text) => applyOutlineToThesis(thesis, text, 'Indice generato'),
-  { toast: 'Indice generato.', doneLabel: 'Indice generato con successo.', eventMessage: 'Generato indice tesi', statusLabel: 'Generazione indice in corso', initialDetail: 'Preparazione richiesta e connessione al provider…' }
+  { toast: 'Indice generato.', doneLabel: 'Indice generato con successo.', eventMessage: 'Generato indice tesi', statusLabel: 'Generazione indice in corso', initialDetail: 'Preparazione richiesta e connessione al providerâ€¦' }
 ));
 
 document.getElementById('outline-review-submit-btn').addEventListener('click', () => {
@@ -1960,7 +2807,7 @@ document.getElementById('outline-review-submit-btn').addEventListener('click', (
       outlineReviewNotesEl.value = '';
       outlineReviewBox.classList.add('hidden');
     },
-    { toast: 'Indice revisionato.', doneLabel: 'Revisione indice completata.', eventMessage: 'Revisionato indice tesi', statusLabel: 'Revisione indice in corso', initialDetail: 'Invio osservazioni di revisione…' }
+    { toast: 'Indice revisionato.', doneLabel: 'Revisione indice completata.', eventMessage: 'Revisionato indice tesi', statusLabel: 'Revisione indice in corso', initialDetail: 'Invio osservazioni di revisioneâ€¦' }
   );
 });
 
@@ -1968,7 +2815,7 @@ document.getElementById('abstract-generate-btn').addEventListener('click', () =>
   'abstract_draft',
   (thesis) => promptAbstract(thesis),
   (thesis, text) => applyAbstractToThesis(thesis, text, 'Abstract generato'),
-  { toast: 'Abstract generato.', doneLabel: 'Abstract generato con successo.', eventMessage: 'Generato abstract tesi', statusLabel: 'Generazione abstract in corso', initialDetail: 'Preparazione abstract e connessione al provider…' }
+  { toast: 'Abstract generato.', doneLabel: 'Abstract generato con successo.', eventMessage: 'Generato abstract tesi', statusLabel: 'Generazione abstract in corso', initialDetail: 'Preparazione abstract e connessione al providerâ€¦' }
 ));
 
 document.getElementById('abstract-review-submit-btn').addEventListener('click', () => {
@@ -1982,13 +2829,14 @@ document.getElementById('abstract-review-submit-btn').addEventListener('click', 
       abstractReviewNotesEl.value = '';
       abstractReviewBox.classList.add('hidden');
     },
-    { toast: 'Abstract revisionato.', doneLabel: 'Revisione abstract completata.', eventMessage: 'Revisionato abstract tesi', statusLabel: 'Revisione abstract in corso', initialDetail: "Invio osservazioni per la revisione dell'abstract…" }
+    { toast: 'Abstract revisionato.', doneLabel: 'Revisione abstract completata.', eventMessage: 'Revisionato abstract tesi', statusLabel: 'Revisione abstract in corso', initialDetail: "Invio osservazioni per la revisione dell'abstractâ€¦" }
   );
 });
 
 document.getElementById('chapter-generate-btn').addEventListener('click', async () => {
   const thesis = getCurrentThesis();
   if (!thesis) { showToast('Apri prima una tesi.', true); return; }
+  if (isThesisGenerationLocked(thesis)) { showToast('Tesi finalizzata: generazione capitoli non disponibile.', true); return; }
   let chapterIndex = thesis.currentChapterIndex || 0;
   let fullText = (thesis.chapters?.[chapterIndex]?.content || '').trim();
   let draftSavedAfterFailure = false;
@@ -1999,7 +2847,7 @@ document.getElementById('chapter-generate-btn').addEventListener('click', async 
     const timeout = getTaskTimeout('chapter_draft');
     const includeNotes = chapterIncludeNotesEl?.checked !== false;
 
-    const started = await startOperation('Generazione capitolo in corso', 'Connessione al provider…', 'chapter_draft');
+    const started = await startOperation('Generazione capitolo in corso', 'Connessione al providerâ€¦', 'chapter_draft');
     if (!started) return;
 
     // Stato sezioni - gestito server-side come nel frontend online
@@ -2028,14 +2876,14 @@ document.getElementById('chapter-generate-btn').addEventListener('click', async 
     const includeOpening = chapterIncludeOpeningEl?.checked === true;
     if (includeOpening && !fullText && subsections.length) {
       try {
-        logStatus('Generazione paragrafo introduttivo…', 'busy', '');
+        logStatus('Generazione paragrafo introduttivoâ€¦', 'busy', '');
         const openingInput = buildStructuredTaskInput(thesis, 'chapter_draft', promptChapterOpening(thesis, chapterIndex), { chapterIndex });
         const openingResult = await callTaskApi('chapter_draft', openingInput, settings, { timeoutMs: 35000 });
         let openingText = (openingResult.text || '').trim();
         if (openingText) {
           // Rimuovi heading capitolo se il backend lo ha aggiunto
           const openingCleaned = openingText.replace(/^Capitolo\s+\d+[^\n]*\n+/i, '').trim();
-          // Assegna solo se dopo la pulizia il testo è ancora non vuoto
+          // Assegna solo se dopo la pulizia il testo Ã¨ ancora non vuoto
           if (openingCleaned) chapterOpeningText = openingCleaned;
         }
       } catch (openingErr) {
@@ -2046,14 +2894,14 @@ document.getElementById('chapter-generate-btn').addEventListener('click', async 
     while (iterCount < MAX_ITER) {
       iterCount++;
 
-      // Mostra quale sezione è in corso (prima pending)
+      // Mostra quale sezione Ã¨ in corso (prima pending)
       const pendingBefore = subsections.find((sub, i) => {
         const code = sub.match(/^(\d+\.\d+)/)?.[1];
         return code && (!chapterSections[code] || chapterSections[code]?.status === 'pending');
       });
       if (pendingBefore) {
         const pendingIdx = subsections.indexOf(pendingBefore);
-        logLines[pendingIdx] = `⏳ ${pendingBefore} (in corso…)`;
+        logLines[pendingIdx] = `â³ ${pendingBefore} (in corsoâ€¦)`;
         renderLog();
       }
 
@@ -2085,17 +2933,17 @@ document.getElementById('chapter-generate-btn').addEventListener('click', async 
         .map(([k]) => k);
       subsections.forEach((sub, i) => {
         const code = sub.match(/^(\d+\.\d+)/)?.[1];
-        if (code && doneSections.includes(code)) logLines[i] = `✓ ${sub}`;
-        else if (logLines[i].includes('in corso')) logLines[i] = `⏳ ${sub}`;
+        if (code && doneSections.includes(code)) logLines[i] = `âœ“ ${sub}`;
+        else if (logLines[i].includes('in corso')) logLines[i] = `â³ ${sub}`;
       });
       renderLog();
 
       if (result.done) break;
       if (result.partial === false && !result.done) {
-        // Sottosezione completata ma capitolo non ancora finito — continua
+        // Sottosezione completata ma capitolo non ancora finito â€” continua
         continue;
       }
-      if (result.partial === true) continue; // sezione parziale — riprova
+      if (result.partial === true) continue; // sezione parziale â€” riprova
       break; // fallback sicuro
     }
 
@@ -2103,7 +2951,7 @@ document.getElementById('chapter-generate-btn').addEventListener('click', async 
     const loopCompleted = iterCount < MAX_ITER;
     if (!loopCompleted) {
       appendEvent('generation', 'Capitolo generato parzialmente (MAX_ITER raggiunto)', { thesisId: thesis.id });
-      showToast('⚠️ Capitolo generato parzialmente. Premi "Genera capitolo" per continuare.', false);
+      showToast('âš ï¸ Capitolo generato parzialmente. Premi "Genera capitolo" per continuare.', false);
     }
 
     fullText = cleanMarkdown(fullText);
@@ -2172,7 +3020,7 @@ document.getElementById('chapter-review-submit-btn').addEventListener('click', (
       chapterReviewNotesEl.value = '';
       chapterReviewBox.classList.add('hidden');
     },
-    { toast: 'Capitolo revisionato.', doneLabel: 'Revisione capitolo completata.', eventMessage: 'Revisionato capitolo tesi', statusLabel: 'Revisione capitolo in corso', initialDetail: 'Invio note di revisione del capitolo al provider…' }
+    { toast: 'Capitolo revisionato.', doneLabel: 'Revisione capitolo completata.', eventMessage: 'Revisionato capitolo tesi', statusLabel: 'Revisione capitolo in corso', initialDetail: 'Invio note di revisione del capitolo al providerâ€¦' }
   );
 });
 
@@ -2194,7 +3042,7 @@ document.getElementById('chapter-tutor-submit-btn').addEventListener('click', ()
       });
       chapterTutorBox.classList.add('hidden');
     },
-    { toast: 'Osservazioni relatore applicate.', doneLabel: 'Osservazioni relatore applicate al capitolo.', eventMessage: 'Applicate osservazioni relatore', statusLabel: 'Applicazione osservazioni relatore in corso', initialDetail: 'Il provider sta rielaborando il capitolo secondo le osservazioni inserite…' }
+    { toast: 'Osservazioni relatore applicate.', doneLabel: 'Osservazioni relatore applicate al capitolo.', eventMessage: 'Applicate osservazioni relatore', statusLabel: 'Applicazione osservazioni relatore in corso', initialDetail: 'Il provider sta rielaborando il capitolo secondo le osservazioni inseriteâ€¦' }
   );
 });
 
@@ -2211,7 +3059,7 @@ document.getElementById('chapter-notes-btn').addEventListener('click', () => {
       if (chapterContentEl) chapterContentEl.value = newText;
       applyChapterToThesis(thesis, thesis.currentChapterIndex, newText, 'Note aggiunte', { validationMode: 'progressive' });
     },
-    { toast: 'Sezione Note generata.', doneLabel: 'Note aggiunte al capitolo.', eventMessage: 'Note capitolo generate', statusLabel: 'Generazione sezione Note in corso', initialDetail: 'Generazione apparato note…' }
+    { toast: 'Sezione Note generata.', doneLabel: 'Note aggiunte al capitolo.', eventMessage: 'Note capitolo generate', statusLabel: 'Generazione sezione Note in corso', initialDetail: 'Generazione apparato noteâ€¦' }
   );
 });
 
@@ -2224,8 +3072,8 @@ document.getElementById('chapter-harmonize-btn').addEventListener('click', () =>
       'TASK: chapter_harmonize_light',
       `CAPITOLO: ${thesis.chapterTitles?.[thesis.currentChapterIndex] || 'Capitolo'}`,
       'Esegui una sola passata leggera di armonizzazione stilistica del testo esistente.',
-      'OBIETTIVI CONSENTITI:\n- migliora la continuità logica e le transizioni tra sottosezioni quando sono brusche o ridondanti;\n- uniforma stile e lessico accademico in modo coerente;\n- elimina ripetizioni di parole o strutture sintattiche ravvicinate.',
-      'VINCOLI ASSOLUTI:\n- non aggiungere nuove sezioni, sottosezioni o contenuti non presenti nel testo originale;\n- non eliminare passaggi argomentativi, esempi o concetti già presenti;\n- non accorciare il testo in modo significativo: la lunghezza finale deve essere analoga all\'originale;\n- non cambiare la tesi argomentativa, le posizioni teoriche o le conclusioni di nessuna sezione;\n- non rigenerare da zero il capitolo;\n- conserva tutti i titoli delle sottosezioni esattamente come sono.',
+      'OBIETTIVI CONSENTITI:\n- migliora la continuitÃ  logica e le transizioni tra sottosezioni quando sono brusche o ridondanti;\n- uniforma stile e lessico accademico in modo coerente;\n- elimina ripetizioni di parole o strutture sintattiche ravvicinate.',
+      'VINCOLI ASSOLUTI:\n- non aggiungere nuove sezioni, sottosezioni o contenuti non presenti nel testo originale;\n- non eliminare passaggi argomentativi, esempi o concetti giÃ  presenti;\n- non accorciare il testo in modo significativo: la lunghezza finale deve essere analoga all\'originale;\n- non cambiare la tesi argomentativa, le posizioni teoriche o le conclusioni di nessuna sezione;\n- non rigenerare da zero il capitolo;\n- conserva tutti i titoli delle sottosezioni esattamente come sono.',
       'Restituisci il capitolo intero armonizzato, non solo le parti modificate.',
       `TESTO ATTUALE:\n${chapterContent.slice(0, 9000)}`,
     ].join('\n\n'),
@@ -2233,7 +3081,7 @@ document.getElementById('chapter-harmonize-btn').addEventListener('click', () =>
       if (chapterContentEl) chapterContentEl.value = text;
       applyChapterToThesis(thesis, thesis.currentChapterIndex, text, 'Armonizzazione applicata', { validationMode: 'progressive' });
     },
-    { toast: 'Capitolo armonizzato.', doneLabel: 'Armonizzazione completata.', eventMessage: 'Capitolo armonizzato', statusLabel: 'Armonizzazione in corso', initialDetail: 'Uniformazione stile e transizioni…' }
+    { toast: 'Capitolo armonizzato.', doneLabel: 'Armonizzazione completata.', eventMessage: 'Capitolo armonizzato', statusLabel: 'Armonizzazione in corso', initialDetail: 'Uniformazione stile e transizioniâ€¦' }
   );
 });
 
@@ -2312,6 +3160,7 @@ document.getElementById('abstract-save-version-btn').addEventListener('click', (
 document.getElementById('chapter-save-version-btn').addEventListener('click', () => {
   const thesis = getCurrentThesis();
   if (!thesis) return;
+  if (isChapterEditingLocked(thesis)) return showToast('Capitoli chiusi: il salvataggio versione del capitolo non e disponibile in fase finale.', true);
   const chapter = thesis.chapters[thesis.currentChapterIndex];
   if (!chapter || !chapterContentEl.value.trim()) return;
   chapter.content = chapterContentEl.value;
@@ -2346,6 +3195,7 @@ document.getElementById('abstract-restore-btn').addEventListener('click', () => 
 document.getElementById('chapter-restore-btn').addEventListener('click', () => {
   const thesis = getCurrentThesis();
   if (!thesis) return;
+  if (isChapterEditingLocked(thesis)) return showToast('Capitoli chiusi: il ripristino versione del capitolo non e disponibile in fase finale.', true);
   const chapter = thesis.chapters[thesis.currentChapterIndex];
   const version = getSelectedVersion(chapter?.versions || [], chapterVersionSelectEl);
   if (!chapter || !version) return;
@@ -2358,6 +3208,7 @@ document.getElementById('chapter-restore-btn').addEventListener('click', () => {
 document.getElementById('chapter-add-btn').addEventListener('click', () => {
   const thesis = getCurrentThesis();
   if (!thesis) return;
+  if (isChapterEditingLocked(thesis)) return showToast('Capitoli chiusi: non e possibile aggiungere capitoli in fase finale.', true);
   ensureChapterCount(thesis, thesis.chapters.length + 1);
   thesis.currentChapterIndex = thesis.chapters.length - 1;
   persistState();
@@ -2368,6 +3219,7 @@ document.getElementById('chapter-add-btn').addEventListener('click', () => {
 document.getElementById('chapter-remove-btn').addEventListener('click', () => {
   const thesis = getCurrentThesis();
   if (!thesis || !thesis.chapters.length) return;
+  if (isChapterEditingLocked(thesis)) return showToast('Capitoli chiusi: non e possibile rimuovere capitoli in fase finale.', true);
   const ok = window.confirm('Eliminare il capitolo corrente?');
   if (!ok) return;
   thesis.chapters.splice(thesis.currentChapterIndex, 1);
@@ -2409,23 +3261,328 @@ document.getElementById('abstract-delete-btn').addEventListener('click', () => {
 document.getElementById('chapter-approve-btn').addEventListener('click', () => {
   const thesis = getCurrentThesis();
   if (!thesis) return;
+  if (isChapterEditingLocked(thesis)) return showToast('Capitoli chiusi: l approvazione capitolo non e disponibile in fase finale.', true);
+  saveWorkspaceFieldsToState({ silent: true, immediate: true });
   const nextIndex = thesis.currentChapterIndex + 1;
-  const plannedCount = parseChapterTitles(thesis.outline || '').length || thesis.chapterTitles.length;
+  const plannedCount = getPlannedChapterCount(thesis);
   if (nextIndex >= plannedCount) {
-    showToast('Tutti i capitoli sono stati completati.');
+    const chapter = thesis.chapters[thesis.currentChapterIndex];
+    const finalReport = analyzeChapterCompleteness(thesis, thesis.currentChapterIndex, chapter?.content || '');
+    if (!finalReport.complete) {
+      showToast("Completa il capitolo finale prima dell'approvazione finale.", true);
+      return;
+    }
+    markFinalChapterApproved(thesis);
+    thesis.updatedAt = new Date().toISOString();
+    persistState();
+    renderWorkspace();
+    renderThesisList();
+    appendEvent('chapter_approve', 'Capitolo finale approvato', {
+      thesisId: thesis.id,
+      chapterIndex: thesis.currentChapterIndex,
+      finalPhase: 'finalization_pending'
+    });
+    logStatus('Capitoli completati. Fase finale attiva.', 'idle', getWorkflowState(thesis).statusMessage);
+    showToast('Capitolo finale approvato. Nessun nuovo capitolo creato.');
     return;
   }
-  // Assicura che il capitolo successivo esista nell'array
+  clearFinalPhaseState(thesis);
   ensureChapterCount(thesis, nextIndex + 1);
   thesis.currentChapterIndex = nextIndex;
+  thesis.updatedAt = new Date().toISOString();
   persistState();
   renderWorkspace();
-  showToast(`Capitolo ${nextIndex + 1} attivo.`);
+  renderThesisList();
+  appendEvent('chapter_approve', 'Capitolo approvato: avanzamento al capitolo successivo', {
+    thesisId: thesis.id,
+    chapterIndex: nextIndex
+  });
+  showToast('Capitolo ' + (nextIndex + 1) + ' attivo.');
+});
+
+finalApparatusGenerateBtnEl?.addEventListener('click', async () => {
+  const thesis = getCurrentThesis();
+  if (!thesis) return;
+  const workflowState = syncWorkflowState(thesis);
+  if (workflowState.phase !== 'finalization_pending') {
+    showToast("La generazione della fase finale e disponibile dopo l'approvazione dell'ultimo capitolo.", true);
+    return;
+  }
+  if (!areAllPlannedChaptersComplete(thesis)) {
+    showToast('Completare prima tutti i capitoli previsti.', true);
+    return;
+  }
+
+  const previousSections = structuredClone(getFinalSections(thesis));
+  const previousApparatus = String(thesis.finalApparatus || '');
+
+  try {
+    const started = await startOperation('Generazione conclusioni in corso', 'Preparazione conclusioni finali della tesi...', 'thesis_final_sections');
+    if (!started) return;
+
+    const generateOnce = async (promptText, retry = false) => {
+      const input = buildStructuredTaskInput(thesis, 'thesis_final_sections', promptText, { chapterIndex: 0, finalPhase: true, retryFinalSections: retry, mode: 'generate_final_sections' });
+      const result = await callTaskApi('thesis_final_sections', input, state.settings, { timeoutMs: getTaskTimeout('thesis_final_sections') });
+
+      const previewThesis = structuredClone(thesis);
+      syncFinalConclusionsOnlyContent(previewThesis, result.text || '');
+
+      return {
+        text: result.text || '',
+        validation: buildFinalSectionsValidation(previewThesis),
+        finalSections: structuredClone(getFinalSections(previewThesis)),
+        finalApparatus: String(previewThesis.finalApparatus || '')
+      };
+    };
+
+    const generated = await generateOnce(promptFinalConclusions(thesis), false);
+    const retried = false;
+
+    if (!generated.validation.conclusionsValid) {
+      thesis.finalSections = previousSections;
+      thesis.finalApparatus = previousApparatus;
+      if (finalConclusionsContentEl) {
+        finalConclusionsContentEl.value = cleanParsedFinalSectionValue('conclusions', parseFinalSectionsText(ensureConclusionsSectionText(generated.text || '')).conclusions || generated.text || '');
+      }
+      const detail = 'Generazione conclusioni insufficiente: testo assente, troppo breve, troncato o non sostanziale. Il testo ricevuto resta visibile per controllo, ma non è stato salvato.';
+      appendEvent('generation_partial', 'Conclusioni generate ma non valide', {
+        thesisId: thesis.id,
+        task: 'thesis_final_sections',
+        scope: 'final_conclusions_invalid',
+        issues: generated.validation.issues,
+        conclusionsValid: generated.validation.conclusionsValid,
+        bibliographyValid: generated.validation.bibliographyValid
+      });
+      await finishOperation('Conclusioni non valide', 'error', detail);
+      showToast(detail, true);
+      return;
+    }
+
+    if (!generated.validation.complete) {
+      thesis.finalSections = generated.finalSections || previousSections;
+      thesis.finalApparatus = generated.finalApparatus || serializeFinalSections(thesis.finalSections);
+      const partialMessage = 'Conclusioni salvate. Bibliografia/riferimenti bibliografici ancora da completare prima della finalizzazione.';
+      thesis.updatedAt = new Date().toISOString();
+      await persistState('saved');
+      renderWorkspace();
+      renderThesisList();
+      appendEvent('generation_partial', 'Conclusioni salvate con apparato finale incompleto', {
+        thesisId: thesis.id,
+        task: 'thesis_final_sections',
+        scope: 'final_conclusions',
+        issues: generated.validation.issues,
+        conclusionsValid: generated.validation.conclusionsValid,
+        bibliographyValid: generated.validation.bibliographyValid
+      });
+      await finishOperation('Conclusioni salvate', 'success', partialMessage);
+      showToast(partialMessage, true);
+      return;
+    }
+
+    thesis.finalSections = generated.finalSections || previousSections;
+    thesis.finalApparatus = generated.finalApparatus || serializeFinalSections(thesis.finalSections);
+    thesis.updatedAt = new Date().toISOString();
+    await persistState('saved');
+    renderWorkspace();
+    renderThesisList();
+    appendEvent('generation', 'Generata fase finale della tesi', { thesisId: thesis.id, task: 'thesis_final_sections', scope: 'final_sections', retried });
+    await finishOperation('Conclusioni generate', 'success', 'Conclusioni finali generate e salvate nel workspace admin.');
+    showToast('Conclusioni generate.');
+  } catch (error) {
+    thesis.finalSections = previousSections;
+    thesis.finalApparatus = previousApparatus;
+    renderWorkspace();
+    const detail = error.message || 'Errore generazione fase finale.';
+    appendEvent('generation_error', 'Errore generazione fase finale', { thesisId: thesis.id, task: 'thesis_final_sections', scope: 'final_sections', error: detail });
+    await finishOperation('Errore generazione fase finale', 'error', detail);
+    showToast(detail, true);
+  }
+});
+
+finalApparatusCopyBtnEl?.addEventListener('click', async () => {
+  const thesis = getCurrentThesis();
+  if (!thesis) return;
+  syncFinalSectionFieldsToState(thesis);
+  const conclusions = String(getFinalSections(thesis).conclusions || '').trim();
+  if (!conclusions) {
+    showToast('Nessuna conclusione da copiare.', true);
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText('Conclusioni\n\n' + conclusions);
+    showToast('Conclusioni copiate.');
+  } catch (error) {
+    showToast('Impossibile copiare le conclusioni.', true);
+  }
+});
+
+finalApparatusDownloadBtnEl?.addEventListener('click', () => {
+  const thesis = getCurrentThesis();
+  if (!thesis) return;
+  syncFinalSectionFieldsToState(thesis);
+  const conclusions = String(getFinalSections(thesis).conclusions || '').trim();
+  if (!conclusions) {
+    showToast('Nessuna conclusione da scaricare.', true);
+    return;
+  }
+  const base = String(thesis.title || thesis.topic || 'tesi')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60) || 'tesi';
+  const blob = new Blob(['Conclusioni\n\n' + conclusions], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = base + '-conclusioni.txt';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  showToast('Conclusioni scaricate in TXT.');
+});
+
+finalApparatusSaveBtnEl?.addEventListener('click', () => {
+  const thesis = getCurrentThesis();
+  if (!thesis) return;
+  syncFinalSectionFieldsToState(thesis);
+  thesis.updatedAt = new Date().toISOString();
+  persistState();
+  renderWorkspace();
+  renderThesisList();
+  appendEvent('final_sections_save', 'Sezioni finali salvate separatamente', { thesisId: thesis.id });
+  showToast('Sezioni finali salvate.');
+});
+
+finalBibliographyFormatBtnEl?.addEventListener('click', () => {
+  const thesis = getCurrentThesis();
+  if (!thesis) return;
+
+  const rawLines = [
+    ...String(finalBibliographyContentEl?.value || '').replace(/\r/g, '').split(/\n+/),
+    ...String(finalLegalReferencesContentEl?.value || '').replace(/\r/g, '').split(/\n+/)
+  ]
+    .map((line) => String(line || '').replace(/^[-–—•*]\s+/, '').replace(/^\d+[.)]\s+/, '').replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+
+  if (!rawLines.length) {
+    showToast('Inserisci prima fonti o riferimenti da separare e formattare.', true);
+    return;
+  }
+
+  const legal = [];
+  const bibliography = [];
+  const seenLegal = new Set();
+  const seenBiblio = new Set();
+
+  const isNorm = (line) => {
+    const x = String(line || '').toLowerCase();
+    return /\bgdpr\b/.test(x)
+      || /\bai act\b/.test(x)
+      || /\bregolamento\s+ue\b/.test(x)
+      || /\bdirettiva\b/.test(x)
+      || /\blegge\b/.test(x)
+      || /\bdecreto\b/.test(x)
+      || /\bsentenza\b/.test(x)
+      || /\bcorte\b/.test(x)
+      || /\bcodice\b/.test(x)
+      || /\bcostituzione\b/.test(x);
+  };
+
+  const normKey = (line) => String(line || '').toLowerCase().replace(/\s+/g, ' ').replace(/[.;:]+$/g, '').trim();
+
+  for (const line of rawLines) {
+    const base = line.replace(/[.;]+$/g, '').trim();
+    if (!base) continue;
+
+    if (isNorm(base)) {
+      const item = base + '.';
+      const key = normKey(item);
+      if (!seenLegal.has(key)) {
+        seenLegal.add(key);
+        legal.push(item);
+      }
+      continue;
+    }
+
+    const hasEnoughBibliographicSignals = base.includes(',')
+      || /\b(19|20)\d{2}\b/.test(base)
+      || /\b(press|publisher|journal|rivista|editore|edizioni|university|oxford|cambridge|springer|routledge|doi|isbn)\b/i.test(base);
+
+    const item = (hasEnoughBibliographicSignals ? base : '[DA VERIFICARE - fonte incompleta] ' + base) + '.';
+    const key = normKey(item);
+    if (!seenBiblio.has(key)) {
+      seenBiblio.add(key);
+      bibliography.push(item);
+    }
+  }
+
+  if (finalLegalReferencesContentEl) {
+    finalLegalReferencesContentEl.value = legal.sort((a, b) => a.localeCompare(b, 'it', { sensitivity: 'base' })).join('\n');
+  }
+
+  if (finalBibliographyContentEl) {
+    finalBibliographyContentEl.value = bibliography.sort((a, b) => a.localeCompare(b, 'it', { sensitivity: 'base' })).join('\n');
+  }
+
+  syncFinalSectionFieldsToState(thesis);
+  const approvals = getFinalApprovals(thesis);
+  approvals.bibliography = false;
+  if (legal.length) approvals.legalReferences = false;
+
+  thesis.updatedAt = new Date().toISOString();
+  persistState();
+  renderWorkspace();
+  renderThesisList();
+
+  appendEvent('final_sources_split_format', 'Fonti finali separate e formattate localmente', {
+    thesisId: thesis.id,
+    legalCount: legal.length,
+    bibliographyCount: bibliography.length
+  });
+
+  showToast('Fonti separate e formattate. Verifica prima di approvare.');
+});
+
+finalConclusionsApproveBtnEl?.addEventListener('click', () => approveFinalSection('conclusions'));
+finalLegalReferencesApproveBtnEl?.addEventListener('click', () => approveFinalSection('legalReferences'));
+finalBibliographyApproveBtnEl?.addEventListener('click', () => approveFinalSection('bibliography'));
+finalSitographyApproveBtnEl?.addEventListener('click', () => approveFinalSection('sitography'));
+
+document.getElementById('thesis-finalize-btn')?.addEventListener('click', () => {
+  const thesis = getCurrentThesis();
+  if (!thesis) return;
+  syncFinalSectionFieldsToState(thesis);
+  const workflowState = syncWorkflowState(thesis);
+  if (workflowState.phase !== 'finalization_pending') return;
+  if (!areAllPlannedChaptersComplete(thesis)) {
+    showToast('Completare prima tutti i capitoli previsti.', true);
+    return;
+  }
+  const finalValidation = buildFinalSectionsValidation(thesis);
+  if (!finalValidation.complete) {
+    showToast(finalValidation.issues[0] || 'Fase finale incompleta.', true);
+    return;
+  }
+  finalizeThesis(thesis);
+  thesis.updatedAt = new Date().toISOString();
+  persistState();
+  renderWorkspace();
+  renderThesisList();
+  appendEvent('thesis_finalize', 'Tesi finalizzata', {
+    thesisId: thesis.id,
+    completedAt: thesis.completedAt
+  });
+  logStatus('Tesi finalizzata.', 'idle', getWorkflowState(thesis).statusMessage);
+  showToast('Tesi finalizzata. Export finale cliente abilitato.');
 });
 
 document.getElementById('chapter-clear-btn').addEventListener('click', () => {
   const thesis = getCurrentThesis();
   if (!thesis) return;
+  if (isChapterEditingLocked(thesis)) return showToast('Capitoli chiusi: svuotamento testo non disponibile in fase finale.', true);
   const chapter = thesis.chapters[thesis.currentChapterIndex];
   if (!chapter || !chapter.content.trim()) return;
   const ok = window.confirm('Svuotare il testo del capitolo corrente e le relative versioni salvate?');
@@ -2476,17 +3633,17 @@ document.getElementById('settings-save-btn').addEventListener('click', () => {
   state.settings.apiBaseUrl = apiBaseUrl;
   state.settings.timeoutMs = timeoutMs;
   persistState();
-  settingsStatusEl.textContent = 'Impostazioni provider salvate.';
+  settingsStatusEl.textContent = normalizeAdminUiText('Impostazioni provider salvate.');
   appendEvent('settings', 'Salvate impostazioni provider desktop admin', { settings: state.settings });
   showToast('Impostazioni provider salvate.');
 });
 
 document.getElementById('settings-test-btn').addEventListener('click', async () => {
-  settingsStatusEl.textContent = 'Test endpoint in corso…';
+  settingsStatusEl.textContent = normalizeAdminUiText('Test endpoint in corsoâ€¦');
   const probe = await testApiConnection({ apiBaseUrl: settingsApiBaseEl.value.trim(), timeoutMs: Number(settingsTimeoutEl.value || 180000) });
-  settingsStatusEl.textContent = probe.ok
+  settingsStatusEl.textContent = normalizeAdminUiText(probe.ok
     ? `Endpoint raggiunto. Stato ${probe.status}. ${probe.details}`
-    : `Test non riuscito. ${probe.details}`;
+    : `Test non riuscito. ${probe.details}`);
   appendEvent('provider_test', probe.ok ? 'Test endpoint riuscito' : 'Test endpoint fallito', probe);
 });
 
@@ -2545,16 +3702,10 @@ async function bootstrapApp() {
   } catch (error) {
     console.error('Bootstrap renderer fallito:', error);
     state = createInitialAdminState();
-    showToast('Avvio in modalità locale di emergenza.', true);
+    showToast('Avvio in modalitÃ  locale di emergenza.', true);
   }
 
   try {
-    const appInfo = await window.accademiaAdmin?.getAppInfo?.();
-    if (appInfo) {
-      appMeta = appInfo;
-      appInfoEl.textContent = `${appInfo.appName} · v${appInfo.version}`;
-      renderAppSystemInfo(appInfo);
-    }
     const recoveryDetected = detectRecoveryState();
     if (recoveryDetected) {
       appendEvent('recovery', 'Recupero sessione desktop rilevato', { recovery: getRuntimeState().recoveryNotice });
@@ -2569,6 +3720,16 @@ async function bootstrapApp() {
     renderEvents();
     renderRuntimeState();
     startHeartbeat();
+    try {
+      const appInfo = await window.accademiaAdmin?.getAppInfo?.();
+      if (appInfo) {
+        appMeta = appInfo;
+        appInfoEl.textContent = normalizeAdminUiText(`${appInfo.appName} - v${appInfo.version}`);
+        renderAppSystemInfo(appInfo);
+      }
+    } catch (error) {
+      console.warn('Recupero info applicazione fallito:', error);
+    }
     if (recoveryDetected) {
       persistState('saved');
     }

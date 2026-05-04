@@ -251,6 +251,7 @@
                 <label><span>Capitolo corrente</span><select id="workspace-chapter-select"></select></label>
               </div>
               <label><span>Argomento</span><textarea id="workspace-field-topic" rows="4"></textarea></label>
+              <label><span>Materiali e fonti indicate dal relatore</span><textarea id="workspace-field-advisor-sources" rows="3" placeholder="Libri, articoli, autori, dispense, PDF, link o fonti obbligatorie/consigliate dal relatore."></textarea></label>
               <label><span>Note admin</span><textarea id="workspace-field-notes" rows="3"></textarea></label>
 
               <div class="workspace-body-grid full-grid">
@@ -328,6 +329,7 @@
                   <div class="row-actions wrap-gap">
                     <button class="primary-btn small-btn" id="chapter-generate-btn" type="button">Genera capitolo</button>
                     <button class="primary-btn small-btn hidden" id="chapter-approve-btn" type="button" style="background:#22c55e;border-color:#22c55e">✓ Approva → capitolo successivo</button>
+
                     <button class="ghost-btn small-btn" id="chapter-notes-btn" type="button">Genera Note</button>
                     <button class="ghost-btn small-btn" id="chapter-harmonize-btn" type="button">Armonizza</button>
                     <button class="ghost-btn small-btn" id="chapter-revise-toggle-btn" type="button">Revisione capitolo</button>
@@ -373,6 +375,83 @@
                   <div class="mini-badge" id="workspace-thesis-badge">Nessuna tesi</div>
                 </div>
                 <div id="workspace-status-log" class="status-log">Nessuna operazione eseguita.</div>
+                <div id="workspace-phase-status" class="versions-meta">Fase corrente: Capitoli</div>
+              </article>
+
+              <article class="subcard hidden" id="final-apparatus-card">
+                <div class="section-head compact-head">
+                  <div>
+                    <h3>Fase finale della tesi</h3>
+                    <p class="muted-small">Gestisci la fase finale in sezioni separate: conclusioni, riferimenti normativi, bibliografia e sitografia. Ogni blocco va verificato e approvato separatamente.</p>
+                  </div>
+                </div>
+
+                <div class="subcard" style="margin-top:12px">
+                  <div class="section-head section-head-between compact-head">
+                    <div>
+                      <h3>1. Conclusioni</h3>
+                      <p class="muted-small">Genera, controlla e approva le conclusioni finali della tesi.</p>
+                    </div>
+                    <div class="mini-badge" id="final-conclusions-badge">Da completare</div>
+                  </div>
+                  <textarea id="final-conclusions-content" rows="9" placeholder="Conclusioni finali della tesi"></textarea>
+                  <div class="row-actions" style="margin-top:10px">
+                    <button class="ghost-btn small-btn" id="final-apparatus-generate-btn" type="button">Genera conclusioni</button>
+                    <button class="primary-btn small-btn" id="final-conclusions-approve-btn" type="button">Approva conclusioni</button>
+                    <button class="ghost-btn small-btn" id="final-apparatus-copy-btn" type="button">Copia conclusioni</button>
+                    <button class="ghost-btn small-btn" id="final-apparatus-download-btn" type="button">Scarica TXT</button>
+                  </div>
+                </div>
+
+                <div class="subcard" style="margin-top:12px">
+                  <div class="section-head section-head-between compact-head">
+                    <div>
+                      <h3>2. Bibliografia / riferimenti bibliografici</h3>
+                      <p class="muted-small">Incolla qui fonti bibliografiche, normative o sitografiche anche in forma grezza. Il pulsante “Separa e formatta fonti” proverà a distribuirle nei campi corretti senza inventare fonti.</p>
+                    </div>
+                    <div class="mini-badge" id="final-bibliography-badge">Da completare</div>
+                  </div>
+                  <textarea id="final-bibliography-content" rows="8" placeholder="Bibliografia / riferimenti bibliografici"></textarea>
+                  <div class="versions-meta" id="final-bibliography-verify-note">Le righe marcate [DA VERIFICARE] devono essere completate o rimosse prima dell’approvazione della Bibliografia.</div>
+                  <div class="row-actions" style="margin-top:10px">
+                    <button class="ghost-btn small-btn" id="final-bibliography-format-btn" type="button">Separa e formatta fonti</button>
+                    <button class="primary-btn small-btn" id="final-bibliography-approve-btn" type="button">Approva bibliografia</button>
+                  </div>
+                </div>
+
+                <div class="subcard" style="margin-top:12px">
+                  <div class="section-head section-head-between compact-head">
+                    <div>
+                      <h3>3. Riferimenti normativi</h3>
+                      <p class="muted-small">Da indicare solo se pertinenti o realmente presenti nella tesi.</p>
+                    </div>
+                    <div class="mini-badge" id="final-legal-references-badge">Facoltativo</div>
+                  </div>
+                  <textarea id="final-legal-references-content" rows="6" placeholder="Riferimenti normativi, se presenti o pertinenti"></textarea>
+                  <div class="row-actions" style="margin-top:10px">
+                    <button class="primary-btn small-btn" id="final-legal-references-approve-btn" type="button">Approva / ometti riferimenti normativi</button>
+                  </div>
+                </div>
+
+                <div class="subcard" style="margin-top:12px">
+                  <div class="section-head section-head-between compact-head">
+                    <div>
+                      <h3>4. Sitografia / fonti online</h3>
+                      <p class="muted-small">Da compilare solo se sono state realmente usate fonti online.</p>
+                    </div>
+                    <div class="mini-badge" id="final-sitography-badge">Facoltativa</div>
+                  </div>
+                  <textarea id="final-sitography-content" rows="5" placeholder="Sitografia / fonti online, se presenti"></textarea>
+                  <div class="row-actions" style="margin-top:10px">
+                    <button class="primary-btn small-btn" id="final-sitography-approve-btn" type="button">Approva / ometti sitografia</button>
+                    <button class="ghost-btn small-btn" id="final-apparatus-save-btn" type="button">Salva sezioni finali</button>
+                  </div>
+                </div>
+
+                <div class="versions-meta" id="final-apparatus-status">Fase finale non ancora salvata.</div>
+                <div class="row-actions" style="margin-top:12px">
+                  <button class="primary-btn small-btn hidden" id="thesis-finalize-btn" type="button" style="background:#16a34a;border-color:#16a34a">Finalizza tesi</button>
+                </div>
               </article>
             </div>
           </article>

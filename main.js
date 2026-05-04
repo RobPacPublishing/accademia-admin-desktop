@@ -230,6 +230,44 @@ function buildExportDefaultFileName(extension = 'txt') {
   return `accademia-admin-export-${buildTimestampStamp()}.${extension}`;
 }
 
+function isBusyOrLockedError(error) {
+  return ['EBUSY', 'EPERM'].includes(error?.code);
+}
+
+function buildAlternateFilePath(targetPath, variant = 'timestamp') {
+  const parsed = path.parse(targetPath);
+  const suffix = variant === 'copy'
+    ? '-nuova-copia'
+    : variant === 'increment'
+      ? '-2'
+      : `-${buildTimestampStamp()}`;
+  return path.join(parsed.dir, `${parsed.name}${suffix}${parsed.ext}`);
+}
+
+async function writeFileWithAlternativeName(targetPath, content, options) {
+  try {
+    await fs.writeFile(targetPath, content, options);
+    return { filePath: targetPath, alternateUsed: false, originalFilePath: targetPath };
+  } catch (error) {
+    if (!isBusyOrLockedError(error)) throw error;
+  }
+
+  const attempts = ['copy', 'increment', 'timestamp'];
+  let lastError = null;
+  for (const variant of attempts) {
+    const alternativePath = buildAlternateFilePath(targetPath, variant);
+    try {
+      await fs.writeFile(alternativePath, content, options);
+      return { filePath: alternativePath, alternateUsed: true, originalFilePath: targetPath };
+    } catch (error) {
+      lastError = error;
+      if (!isBusyOrLockedError(error)) throw error;
+    }
+  }
+
+  throw lastError || new Error('Impossibile salvare il file esportato.');
+}
+
 function buildPreflightChecks() {
   const checks = [];
   const storage = getStateStorageContext();
@@ -841,8 +879,13 @@ function registerIpcHandlers() {
         return { ok: false, canceled: true };
       }
 
-      await fs.writeFile(result.filePath, raw, payload.encoding || 'utf8');
-      return { ok: true, filePath: result.filePath };
+      const writeResult = await writeFileWithAlternativeName(result.filePath, raw, payload.encoding || 'utf8');
+      return {
+        ok: true,
+        filePath: writeResult.filePath,
+        alternateUsed: writeResult.alternateUsed,
+        originalFilePath: writeResult.originalFilePath
+      };
     } catch (error) {
       return { ok: false, error: error?.message || 'Impossibile esportare il file richiesto.' };
     }
@@ -901,8 +944,13 @@ function registerIpcHandlers() {
       }
 
       const docxBuffer = Array.isArray(payload.sections) ? await buildDocxBufferFromSections(payload) : await buildDocxBufferFromThesis(thesis);
-      await fs.writeFile(result.filePath, docxBuffer);
-      return { ok: true, filePath: result.filePath };
+      const writeResult = await writeFileWithAlternativeName(result.filePath, docxBuffer);
+      return {
+        ok: true,
+        filePath: writeResult.filePath,
+        alternateUsed: writeResult.alternateUsed,
+        originalFilePath: writeResult.originalFilePath
+      };
     } catch (error) {
       return { ok: false, error: error?.message || 'Impossibile esportare il DOCX.' };
     }
