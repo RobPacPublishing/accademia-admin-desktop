@@ -133,6 +133,18 @@ export function normalizeWorkspaceRuntime(rawRuntime) {
   };
 }
 
+function normalizeAdminMethod(method) {
+  const raw = String(method || '').trim();
+  const legacy = {
+    Teorica: 'teorico_bibliografica',
+    Comparativa: 'comparativa',
+    'Caso studio': 'caso_studio',
+    'Revisione sistematica': 'revisione_letteratura',
+    Personalizzato: 'teorico_bibliografica'
+  };
+  return legacy[raw] || raw || 'teorico_bibliografica';
+}
+
 export function normalizeThesisRecord(thesis) {
   const now = new Date().toISOString();
   const item = thesis && typeof thesis === 'object' ? thesis : {};
@@ -183,7 +195,7 @@ export function normalizeThesisRecord(thesis) {
     course: item.course || '',
     degreeType: item.degreeType || 'Triennale',
     topic: item.topic || '',
-    method: item.method || 'Teorica',
+    method: normalizeAdminMethod(item.method || 'teorico_bibliografica'),
     notes: item.notes || '',
     advisorSources: item.advisorSources || item.supervisorSources || item.relatorSources || '',
     outline: item.outline || '',

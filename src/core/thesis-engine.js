@@ -37,7 +37,7 @@ export function createThesisFromForm(form) {
     course: String(form.course || '').trim(),
     degreeType: String(form.degreeType || 'Triennale').trim(),
     topic: String(form.topic || '').trim(),
-    method: String(form.method || 'Teorica').trim(),
+    method: normalizeMethodValue(form.method || 'teorico_bibliografica'),
     notes: String(form.notes || '').trim(),
     advisorSources: String(form.advisorSources || '').trim(),
     archived: false,
@@ -80,7 +80,7 @@ export function normalizeThesisShape(raw) {
     course: String(raw?.course || '').trim(),
     degreeType: String(raw?.degreeType || 'Triennale').trim(),
     topic: String(raw?.topic || '').trim(),
-    method: String(raw?.method || 'Teorica').trim(),
+    method: normalizeMethodValue(raw?.method || 'teorico_bibliografica'),
     notes: String(raw?.notes || '').trim(),
     advisorSources: String(raw?.advisorSources || raw?.supervisorSources || raw?.relatorSources || '').trim(),
     archived: Boolean(raw?.archived),
@@ -337,15 +337,44 @@ export function resolveChapterTitle(thesis, chapterIndex) {
   return `Capitolo ${n}`;
 }
 
+function buildMethodologyPromptGuidance(method) {
+  const normalized = normalizeMethodValue(method);
+  const map = {
+    teorico_bibliografica: 'Guida metodologica: imposta il lavoro come tesi teorico-bibliografica. Ricostruisci criticamente la letteratura, confronta autori, concetti e scuole, evita dati empirici originali, statistiche proprietarie, questionari, interviste o risultati sperimentali.',
+    storico_critica: 'Guida metodologica: imposta il lavoro come analisi storico-critica. Cura contesto, periodizzazione, sviluppo del problema, trasformazioni concettuali, dibattito storiografico o critico e uso prudente delle fonti.',
+    ermeneutica_testuale: 'Guida metodologica: imposta il lavoro come analisi testuale/ermeneutica. Privilegia interpretazione dei testi, lessico degli autori, passaggi argomentativi, categorie concettuali e coerenza interna delle opere.',
+    revisione_letteratura: 'Guida metodologica: imposta il lavoro come revisione della letteratura non necessariamente sistematica. Organizza fonti e posizioni teoriche, individua convergenze, divergenze, limiti e lacune interpretative, senza inventare database, stringhe di ricerca, campioni o risultati quantitativi.',
+    comparativa: 'Guida metodologica: imposta il lavoro come confronto comparativo. Definisci criteri di confronto espliciti, evita parallelismi superficiali e mostra differenze, analogie, limiti e implicazioni teoriche.',
+    giuridico_normativa: 'Guida metodologica: imposta il lavoro come analisi giuridico-normativa. Cura gerarchia delle fonti, dottrina, giurisprudenza, principi, riferimenti normativi verificabili e prudenza terminologica.',
+    documentale: 'Guida metodologica: imposta il lavoro come analisi documentale. Usa materiali, documenti, testi ufficiali o fonti secondarie come corpus interpretativo; non inventare dati, fonti, casi o risultati non disponibili.',
+    caso_studio: 'Guida metodologica: imposta il lavoro come caso studio documentale su fonti fornite o pubbliche verificabili. Non inventare mai aziende, enti, scuole, pazienti, interviste, bilanci, dataset, scenari, dati o risultati. Usa esclusivamente materiali forniti dall’utente o fonti pubbliche verificabili. Se le fonti non bastano, produci struttura, metodo e fabbisogno documentale, chiarendo che la redazione completa richiede materiali verificabili.'
+  };
+  return map[normalized] || 'Guida metodologica: mantieni coerenza con l’approccio scelto, chiarendo metodo, limiti, tipo di fonti usate e portata delle inferenze.';
+}
+
+function buildAntiInventionGuidance(thesis) {
+  const method = normalizeMethodValue(thesis?.method);
+  const base = [
+    'Regola anti-invenzione: non creare fonti, autori, anni, DOI, ISBN, URL, sentenze, dati empirici, interviste, questionari, dataset, aziende, enti, scuole, pazienti, scenari, bilanci o risultati non forniti o non verificabili.',
+    'Quando mancano materiali sufficienti, mantieni il testo su un piano teorico, documentale o metodologico e segnala il fabbisogno di fonti senza sostituirlo con contenuti inventati.'
+  ];
+  if (method === 'caso_studio') {
+    base.push('Vincolo specifico caso studio: il caso studio deve restare documentale e fondato solo su materiali forniti dall’utente o fonti pubbliche verificabili; non simulare raccolte dati, interviste, osservazioni sul campo o risultati empirici.');
+  }
+  return base.join(' ');
+}
+
 export function buildDisciplinaryWritingGuidance(thesis) {
   const faculty = String(thesis.faculty || '').toLowerCase();
   const course = String(thesis.course || '').toLowerCase();
-  const methodology = String(thesis.method || '');
+  const methodology = normalizeMethodValue(thesis.method || 'teorico_bibliografica');
   const area = `${faculty} ${course}`;
   const has = (patterns) => patterns.some((p) => area.includes(p));
-  const methodHint = methodology
-    ? ` Integra sempre il ragionamento con coerenza rispetto alla metodologia dichiarata (${methodology}), esplicitando passaggi, limiti e portata delle inferenze.`
-    : '';
+  const methodHint = [
+    `Integra sempre il ragionamento con coerenza rispetto alla metodologia dichiarata (${methodLabel(methodology)}), esplicitando passaggi, limiti e portata delle inferenze.`,
+    buildMethodologyPromptGuidance(methodology),
+    buildAntiInventionGuidance(thesis)
+  ].filter(Boolean).join(' ');
 
   let profile = '';
   if (has(['comunicazione', 'media', 'sociologia', 'giornal', 'digitale', 'cultural'])) {
@@ -376,7 +405,7 @@ export function buildDisciplinaryWritingGuidance(thesis) {
     profile = "Mantieni un'impostazione accademica disciplinata: definizioni operative, argomentazione progressiva, nessi logici espliciti, cautele inferenziali e lessico coerente con l'area di studio.";
   }
 
-  return profile ? `${profile}${methodHint}`.trim() : '';
+  return profile ? `${profile} ${methodHint}`.trim() : methodHint;
 }
 
 export function buildChapterNotes(thesis, chapterText) {
@@ -414,7 +443,7 @@ export function promptOutline(thesis) {
   return [
     'TASK: outline_draft',
     `ARGOMENTO: ${thesis.topic}`,
-    `CONTESTO ACCADEMICO\nFacolt\u00e0: ${thesis.faculty}\nCorso di laurea: ${thesis.course}\nTipo di laurea: ${thesis.degreeType}\nMetodologia: ${thesis.method}`,
+    `CONTESTO ACCADEMICO\nFacolt\u00e0: ${thesis.faculty}\nCorso di laurea: ${thesis.course}\nTipo di laurea: ${thesis.degreeType}\nMetodologia: ${methodLabel(thesis.method)}`,
     thesis.notes ? `ISTRUZIONI OPERATIVE:\n${thesis.notes}` : '',
     [
       'REGOLE OBBLIGATORIE:',
@@ -435,7 +464,7 @@ export function promptOutlineRevision(thesis, notes) {
   return [
     'TASK: outline_review',
     `ARGOMENTO: ${thesis.topic}`,
-    `CONTESTO ACCADEMICO\nFacolt\u00e0: ${thesis.faculty}\nCorso: ${thesis.course}\nTipo laurea: ${thesis.degreeType}\nMetodologia: ${thesis.method}`,
+    `CONTESTO ACCADEMICO\nFacolt\u00e0: ${thesis.faculty}\nCorso: ${thesis.course}\nTipo laurea: ${thesis.degreeType}\nMetodologia: ${methodLabel(thesis.method)}`,
     `INDICE ATTUALE:\n${thesis.outline}`,
     `OSSERVAZIONI DA RECEPIRE:\n${notes}`,
     [
@@ -453,7 +482,7 @@ export function promptAbstract(thesis) {
   const wordTarget = isMagistrale ? '250-300 parole' : '180-220 parole';
   return [
     'TASK: abstract_draft',
-    `CONTESTO ACCADEMICO\nFacolt\u00e0: ${thesis.faculty}\nCorso: ${thesis.course}\nTipo laurea: ${thesis.degreeType}\nMetodologia: ${thesis.method}`,
+    `CONTESTO ACCADEMICO\nFacolt\u00e0: ${thesis.faculty}\nCorso: ${thesis.course}\nTipo laurea: ${thesis.degreeType}\nMetodologia: ${methodLabel(thesis.method)}`,
     thesis.notes ? `ISTRUZIONI OPERATIVE:\n${thesis.notes}` : '',
     `ARGOMENTO: ${thesis.topic}`,
     `INDICE APPROVATO:\n${thesis.outline}`,
@@ -495,7 +524,7 @@ export function promptChapterOpening(thesis, chapterIndex) {
   return [
     'TASK: chapter_opening',
     `CAPITOLO: ${title}`,
-    `CONTESTO ACCADEMICO\nFacolta': ${thesis.faculty}\nCorso: ${thesis.course}\nTipo laurea: ${thesis.degreeType}\nMetodologia: ${thesis.method}`,
+    `CONTESTO ACCADEMICO\nFacolta': ${thesis.faculty}\nCorso: ${thesis.course}\nTipo laurea: ${thesis.degreeType}\nMetodologia: ${methodLabel(thesis.method)}`,
     `ARGOMENTO: ${thesis.topic}`,
     thesis.notes ? `ISTRUZIONI OPERATIVE:\n${thesis.notes}` : '',
     `INDICE APPROVATO:\n${thesis.outline}`,
@@ -525,7 +554,7 @@ export function promptChapterSubsection(thesis, chapterIndex, subsection, subsec
     `CAPITOLO: ${chapterTitle}`,
     `SOTTOSEZIONE DA SVILUPPARE: ${subsection}`,
     `POSIZIONE: ${subsectionIndex + 1} di ${totalSubsections}`,
-    `CONTESTO ACCADEMICO\nFacolta': ${thesis.faculty}\nCorso: ${thesis.course}\nTipo laurea: ${thesis.degreeType}\nMetodologia: ${thesis.method}`,
+    `CONTESTO ACCADEMICO\nFacolta': ${thesis.faculty}\nCorso: ${thesis.course}\nTipo laurea: ${thesis.degreeType}\nMetodologia: ${methodLabel(thesis.method)}`,
     `ARGOMENTO: ${thesis.topic}`,
     thesis.notes ? `ISTRUZIONI OPERATIVE:\n${thesis.notes}` : '',
     disciplinary ? `PROFILO DISCIPLINARE:\n${disciplinary}` : '',
@@ -561,7 +590,7 @@ export function promptChapterSubsectionExpansion(thesis, chapterIndex, subsectio
     'TASK: chapter_subsection_recovery',
     `CAPITOLO: ${chapterTitle}`,
     `SOTTOSEZIONE DA RAFFORZARE: ${subsection}`,
-    `CONTESTO ACCADEMICO\nFacolta': ${thesis.faculty}\nCorso: ${thesis.course}\nTipo laurea: ${thesis.degreeType}\nMetodologia: ${thesis.method}`,
+    `CONTESTO ACCADEMICO\nFacolta': ${thesis.faculty}\nCorso: ${thesis.course}\nTipo laurea: ${thesis.degreeType}\nMetodologia: ${methodLabel(thesis.method)}`,
     `ARGOMENTO: ${thesis.topic}`,
     thesis.notes ? `ISTRUZIONI OPERATIVE:\n${thesis.notes}` : '',
     disciplinary ? `PROFILO DISCIPLINARE:\n${disciplinary}` : '',
@@ -595,7 +624,7 @@ export function promptChapter(thesis, chapterIndex) {
   return [
     'TASK: chapter_draft',
     `CAPITOLO: ${title}`,
-    `CONTESTO ACCADEMICO\nFacolt\u00e0: ${thesis.faculty}\nCorso: ${thesis.course}\nTipo laurea: ${thesis.degreeType}\nMetodologia: ${thesis.method}`,
+    `CONTESTO ACCADEMICO\nFacolt\u00e0: ${thesis.faculty}\nCorso: ${thesis.course}\nTipo laurea: ${thesis.degreeType}\nMetodologia: ${methodLabel(thesis.method)}`,
     `ARGOMENTO: ${thesis.topic}`,
     thesis.notes ? `ISTRUZIONI OPERATIVE:\n${thesis.notes}` : '',
     `INDICE APPROVATO:\n${thesis.outline}`,
@@ -687,7 +716,7 @@ export function promptTutorRevision(thesis, chapterIndex, tutorInput) {
   return [
     'TASK: tutor_revision',
     `CAPITOLO: ${title}`,
-    `CONTESTO ACCADEMICO\nFacolt\u00e0: ${thesis.faculty}\nCorso: ${thesis.course}\nTipo laurea: ${thesis.degreeType}\nMetodologia: ${thesis.method}`,
+    `CONTESTO ACCADEMICO\nFacolt\u00e0: ${thesis.faculty}\nCorso: ${thesis.course}\nTipo laurea: ${thesis.degreeType}\nMetodologia: ${methodLabel(thesis.method)}`,
     `ARGOMENTO: ${thesis.topic}`,
     thesis.notes ? `ISTRUZIONI OPERATIVE:\n${thesis.notes}` : '',
     `INDICE APPROVATO:\n${thesis.outline}`,
@@ -1038,7 +1067,7 @@ export function promptFinalRevision(thesis) {
   return [
     'TASK: thesis_final_revision',
     `ARGOMENTO: ${thesis.topic || thesis.title || ''}`,
-    `CONTESTO ACCADEMICO\nFacolta: ${thesis.faculty || ''}\nCorso: ${thesis.course || ''}\nTipo laurea: ${thesis.degreeType || ''}\nMetodologia: ${thesis.method || ''}`,
+    `CONTESTO ACCADEMICO\nFacolta: ${thesis.faculty || ''}\nCorso: ${thesis.course || ''}\nTipo laurea: ${thesis.degreeType || ''}\nMetodologia: ${methodLabel(thesis.method || '')}`,
     thesis.notes ? `ISTRUZIONI OPERATIVE / NOTE ADMIN:\n${thesis.notes}` : '',
     `INDICE APPROVATO:\n${thesis.outline || ''}`,
     `ABSTRACT APPROVATO:\n${thesis.abstract || ''}`,
@@ -1073,7 +1102,7 @@ ${content.slice(0, 6500)}`;
 Facolta: ${thesis.faculty || ''}
 Corso: ${thesis.course || ''}
 Tipo laurea: ${thesis.degreeType || ''}
-Metodologia: ${thesis.method || ''}`,
+Metodologia: ${methodLabel(thesis.method || '')}`,
     thesis.notes ? `NOTE ADMIN / VINCOLI:
 ${thesis.notes}` : '',
     thesis.outline ? `INDICE:
@@ -1112,7 +1141,7 @@ export function promptFinalConclusions(thesis) {
     'Genera esclusivamente le CONCLUSIONI finali di una TESI DI LAUREA.',
     'Non generare Bibliografia, Riferimenti normativi, Sitografia, Appendici o nuovi capitoli.',
     `ARGOMENTO: ${thesis.topic || thesis.title || ''}`,
-    `CONTESTO ACCADEMICO\nFacolta: ${thesis.faculty || ''}\nCorso: ${thesis.course || ''}\nTipo laurea: ${thesis.degreeType || ''}\nMetodologia: ${thesis.method || ''}`,
+    `CONTESTO ACCADEMICO\nFacolta: ${thesis.faculty || ''}\nCorso: ${thesis.course || ''}\nTipo laurea: ${thesis.degreeType || ''}\nMetodologia: ${methodLabel(thesis.method || '')}`,
     thesis.notes ? `NOTE ADMIN / VINCOLI:\n${thesis.notes}` : '',
     thesis.outline ? `INDICE:\n${thesis.outline}` : '',
     thesis.abstract ? `ABSTRACT:\n${thesis.abstract}` : '',
@@ -1129,6 +1158,67 @@ export function promptFinalConclusions(thesis) {
       'Non usare placeholder, note admin, commenti tecnici o avvisi di verifica.',
       'Formato: titolo Conclusioni su una riga, seguito dal testo sostanziale. Non usare sottotitoli, markdown, numerazioni, sezioni interne o titoli intermedi.'
     ].join('\n')
+  ].filter(Boolean).join('\n\n');
+}
+
+export function promptFinalSingleSection(thesis, sectionKey, sectionTitle) {
+  const chapters = Array.isArray(thesis?.chapters) ? thesis.chapters : [];
+  const compactChapters = chapters.map((chapter, index) => {
+    const content = normalizeChapterForExport(thesis, index, chapter?.content || '');
+    return `CAPITOLO ${index + 1} - ${resolveChapterTitle(thesis, index)}\n${content.slice(0, 6500)}`;
+  }).join('\n\n');
+
+  const normalizedKey = String(sectionKey || '').trim();
+  const title = String(sectionTitle || '').trim() || 'Sezione finale';
+  const advisorSources = String(thesis?.advisorSources || thesis?.supervisorSources || thesis?.relatorSources || '').trim();
+
+  const specific = {
+    conclusions: [
+      'ISTRUZIONI SPECIFICHE CONCLUSIONI:',
+      'Scrivi conclusioni complete, argomentative e non riassuntive, tra 650 e 900 parole.',
+      'Valorizza risultati argomentativi, limiti teorici, implicazioni e prospettive senza ripetere meccanicamente i capitoli.',
+      'Non introdurre nuove fonti, nuovi autori, nuove norme o dati non presenti nel materiale fornito.'
+    ],
+    bibliography: [
+      'ISTRUZIONI SPECIFICHE BIBLIOGRAFIA:',
+      'Elenca solo fonti indicate dall’utente, presenti nei materiali del relatore o chiaramente ricavabili dal testo della tesi.',
+      'Non inventare editore, anno, DOI, ISBN, URL, pagine, riviste o case editrici se non presenti.',
+      'Formato essenziale accademico, una fonte per riga.',
+      'Se le fonti certe sono poche, produci una bibliografia essenziale prudente senza completare artificialmente dati mancanti.'
+    ],
+    legalReferences: [
+      'ISTRUZIONI SPECIFICHE RIFERIMENTI NORMATIVI:',
+      'Inserisci solo norme, regolamenti, sentenze, articoli o fonti giuridiche effettivamente presenti o chiaramente pertinenti alla tesi.',
+      'Non inventare leggi, sentenze, articoli normativi, date, numeri o riferimenti istituzionali.',
+      'Se la tesi non richiede riferimenti normativi, scrivi esattamente: Non pertinente per questa tesi.'
+    ],
+    sitography: [
+      'ISTRUZIONI SPECIFICHE SITOGRAFIA:',
+      'Inserisci solo fonti online realmente usate, indicate dall’utente o chiaramente presenti nei materiali forniti.',
+      'Non inventare URL, portali, pagine web, date di consultazione o risorse online.',
+      'Se non sono state usate fonti web, scrivi esattamente: Non necessaria: le fonti usate sono bibliografiche e non sitografiche.'
+    ]
+  }[normalizedKey] || [];
+
+  return [
+    'TASK: thesis_final_sections',
+    `Genera SOLO la sezione finale: ${title}.`,
+    'Non generare altri capitoli. Non generare altre sezioni finali.',
+    'Usa il titolo richiesto come prima riga e poi il contenuto della sezione.',
+    'Non chiudere con frasi sospese. Non usare placeholder o commenti di servizio.',
+    'Non inventare fonti, dati, riferimenti, enti, aziende, casi studio, interviste, dataset o risultati non verificabili.',
+    '',
+    `ARGOMENTO / TITOLO TESI: ${thesis.topic || thesis.title || ''}`,
+    `CONTESTO ACCADEMICO\nFacolta: ${thesis.faculty || ''}\nCorso: ${thesis.course || ''}\nTipo laurea: ${thesis.degreeType || ''}\nMetodologia: ${methodLabel(thesis.method || '')}`,
+    thesis.notes ? `NOTE ADMIN / VINCOLI:\n${thesis.notes}` : '',
+    `MATERIALI E FONTI INDICATE DAL RELATORE:\n${advisorSources || 'Nessun materiale aggiuntivo indicato dal relatore.'}`,
+    thesis.outline ? `INDICE APPROVATO:\n${thesis.outline}` : '',
+    thesis.abstract ? `ABSTRACT APPROVATO:\n${thesis.abstract}` : '',
+    `CAPITOLI SVILUPPATI:\n${compactChapters}`,
+    '',
+    ...specific,
+    '',
+    'Restituisci solo la sezione richiesta, senza testo aggiuntivo prima o dopo.'
   ].filter(Boolean).join('\n\n');
 }
 
@@ -1353,15 +1443,30 @@ function escapeRegex(value) {
   return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+function normalizeMethodValue(method) {
+  const raw = String(method || '').trim();
+  const legacy = {
+    Teorica: 'teorico_bibliografica',
+    Comparativa: 'comparativa',
+    'Caso studio': 'caso_studio',
+    'Revisione sistematica': 'revisione_letteratura',
+    Personalizzato: 'teorico_bibliografica'
+  };
+  return legacy[raw] || raw || 'teorico_bibliografica';
+}
+
 function methodLabel(method) {
   const map = {
-    Teorica: 'teorica',
-    Comparativa: 'comparativa',
-    'Caso studio': 'basata su caso studio',
-    'Revisione sistematica': 'di revisione della letteratura',
-    Personalizzato: 'con approccio personalizzato'
+    teorico_bibliografica: 'teorico-bibliografica',
+    storico_critica: 'storico-critica',
+    ermeneutica_testuale: 'di analisi testuale/ermeneutica',
+    revisione_letteratura: 'di revisione della letteratura',
+    comparativa: 'comparativa',
+    giuridico_normativa: 'giuridico-normativa',
+    documentale: 'documentale',
+    caso_studio: 'di caso studio documentale su fonti fornite'
   };
-  return map[method] || 'teorica';
+  return map[normalizeMethodValue(method)] || 'teorico-bibliografica';
 }
 
 function ordinal(num) {

@@ -21,6 +21,7 @@ import {
   promptFinalRevision,
   promptFinalSections,
   promptFinalConclusions,
+  promptFinalSingleSection,
   promptFinalSectionsRetry,
   createEmptyFinalSections,
   normalizeFinalSections,
@@ -880,6 +881,29 @@ function renderMetrics() {
   dashboardMetrics.critical.textContent = normalizeAdminUiText(String(state.events.filter((event) => ['error', 'warning'].includes(getEventSeverity(event))).length));
 }
 
+function displayMethodLabel(method) {
+  const raw = String(method || '').trim();
+  const legacy = {
+    Teorica: 'teorico_bibliografica',
+    Comparativa: 'comparativa',
+    'Caso studio': 'caso_studio',
+    'Revisione sistematica': 'revisione_letteratura',
+    Personalizzato: 'teorico_bibliografica'
+  };
+  const normalized = legacy[raw] || raw || 'teorico_bibliografica';
+  const labels = {
+    teorico_bibliografica: 'Teorico-bibliografica',
+    storico_critica: 'Storico-critica',
+    ermeneutica_testuale: 'Analisi testuale / ermeneutica',
+    revisione_letteratura: 'Revisione della letteratura',
+    comparativa: 'Comparativa',
+    giuridico_normativa: 'Giuridico-normativa',
+    documentale: 'Documentale',
+    caso_studio: 'Caso studio documentale su fonti fornite'
+  };
+  return labels[normalized] || normalized;
+}
+
 function renderThesisList() {
   const search = String(thesisSearchEl.value || '').trim().toLowerCase();
   const filter = thesisFilterEl.value;
@@ -916,7 +940,7 @@ function renderThesisList() {
         </div>
         <div class="item-badges">
           <span class="mini-badge${thesis.archived ? ' archived' : ''}">${thesis.archived ? 'Archiviata' : 'Attiva'}</span>
-          <span class="mini-badge">${escapeAdminUiHtml(thesis.method || 'Teorica')}</span>
+          <span class="mini-badge">${escapeAdminUiHtml(displayMethodLabel(thesis.method))}</span>
         </div>
       </div>
       <p class="topic-preview">${escapeAdminUiHtml(thesis.topic || 'Nessun argomento')}</p>
@@ -1938,7 +1962,7 @@ function createNewThesis() {
   appendEvent('thesis_create', 'Creata nuova tesi admin', { thesisId: thesis.id, title: thesis.title });
   thesisForm.reset();
   createFields.degreeType.value = 'Triennale';
-  createFields.method.value = 'Teorica';
+  createFields.method.value = 'teorico_bibliografica';
   syncFacultyField(createFacultySelectEl, createFacultyCustomWrapEl, createFacultyCustomEl, '');
   renderThesisList();
   renderWorkspace();
@@ -2494,6 +2518,21 @@ function buildClientChapterDocxPayload(thesis) {
   };
 }
 
+function isOmissibleOptionalFinalSection(key, content) {
+  const text = normalizeFinalSectionContent(key, content).toLowerCase().trim();
+  if (!text) return true;
+  if (key === 'legalReferences') {
+    return text.startsWith('non pertinente') || text.includes('non pertinente per questa tesi');
+  }
+  if (key === 'sitography') {
+    return text.startsWith('non necessaria')
+      || text.startsWith('non necessario')
+      || text.includes('fonti usate sono bibliografiche')
+      || text.includes('non sitografiche');
+  }
+  return false;
+}
+
 function sanitizeFinalSectionForExport(key, content) {
   return normalizeFinalSectionContent(key, content)
     .replace(FINAL_SECTION_PLACEHOLDER_PATTERN, '')
@@ -2517,11 +2556,14 @@ function buildClientFullDocxPayload(thesis) {
       pageBreakBefore: true
     };
   });
+  const includeLegalReferences = !isOmissibleOptionalFinalSection('legalReferences', finalValidation.sections.legalReferences || '');
+  const includeSitography = !isOmissibleOptionalFinalSection('sitography', finalValidation.sections.sitography || '');
+
   const thesisFinalSections = [
     { title: 'Conclusioni', content: sanitizeFinalSectionForExport('conclusions', finalValidation.sections.conclusions || ''), pageBreakBefore: true },
     { title: 'Bibliografia e riferimenti bibliografici', content: sanitizeFinalSectionForExport('bibliography', finalValidation.sections.bibliography || ''), pageBreakBefore: true },
-    ...(String(finalValidation.sections.legalReferences || '').trim() ? [{ title: 'Riferimenti normativi', content: sanitizeFinalSectionForExport('legalReferences', finalValidation.sections.legalReferences), pageBreakBefore: true }] : []),
-    ...(String(finalValidation.sections.sitography || '').trim() ? [{ title: 'Sitografia e fonti online', content: sanitizeFinalSectionForExport('sitography', finalValidation.sections.sitography), pageBreakBefore: true }] : [])
+    ...(includeLegalReferences ? [{ title: 'Riferimenti normativi', content: sanitizeFinalSectionForExport('legalReferences', finalValidation.sections.legalReferences), pageBreakBefore: true }] : []),
+    ...(includeSitography ? [{ title: 'Sitografia e fonti online', content: sanitizeFinalSectionForExport('sitography', finalValidation.sections.sitography), pageBreakBefore: true }] : [])
   ];
   return {
     documentTitle: thesis.title || 'Tesi senza titolo',
@@ -2741,7 +2783,7 @@ thesisForm.addEventListener('submit', (event) => {
 document.getElementById('reset-form-btn').addEventListener('click', () => {
   thesisForm.reset();
   createFields.degreeType.value = 'Triennale';
-  createFields.method.value = 'Teorica';
+  createFields.method.value = 'teorico_bibliografica';
   syncFacultyField(createFacultySelectEl, createFacultyCustomWrapEl, createFacultyCustomEl, '');
 });
 
@@ -3315,85 +3357,89 @@ finalApparatusGenerateBtnEl?.addEventListener('click', async () => {
 
   const previousSections = structuredClone(getFinalSections(thesis));
   const previousApparatus = String(thesis.finalApparatus || '');
+  const previousApprovals = structuredClone(getFinalApprovals(thesis));
 
   try {
-    const started = await startOperation('Generazione conclusioni in corso', 'Preparazione conclusioni finali della tesi...', 'thesis_final_sections');
+    const started = await startOperation('Generazione fase finale in corso', 'Preparazione sezioni finali della tesi...', 'thesis_final_sections');
     if (!started) return;
 
-    const generateOnce = async (promptText, retry = false) => {
-      const input = buildStructuredTaskInput(thesis, 'thesis_final_sections', promptText, { chapterIndex: 0, finalPhase: true, retryFinalSections: retry, mode: 'generate_final_sections' });
-      const result = await callTaskApi('thesis_final_sections', input, state.settings, { timeoutMs: getTaskTimeout('thesis_final_sections') });
+    thesis.finalSections = createEmptyFinalSections();
+    thesis.finalApparatus = '';
+    thesis.finalApprovals = createEmptyFinalApprovals();
+    writeFinalSectionFieldsToDom(thesis.finalSections);
+    renderWorkspace();
 
-      const previewThesis = structuredClone(thesis);
-      syncFinalConclusionsOnlyContent(previewThesis, result.text || '');
-
-      return {
-        text: result.text || '',
-        validation: buildFinalSectionsValidation(previewThesis),
-        finalSections: structuredClone(getFinalSections(previewThesis)),
-        finalApparatus: String(previewThesis.finalApparatus || '')
-      };
-    };
-
-    const generated = await generateOnce(promptFinalConclusions(thesis), false);
-    const retried = false;
-
-    if (!generated.validation.conclusionsValid) {
-      thesis.finalSections = previousSections;
-      thesis.finalApparatus = previousApparatus;
-      if (finalConclusionsContentEl) {
-        finalConclusionsContentEl.value = cleanParsedFinalSectionValue('conclusions', parseFinalSectionsText(ensureConclusionsSectionText(generated.text || '')).conclusions || generated.text || '');
-      }
-      const detail = 'Generazione conclusioni insufficiente: testo assente, troppo breve, troncato o non sostanziale. Il testo ricevuto resta visibile per controllo, ma non è stato salvato.';
-      appendEvent('generation_partial', 'Conclusioni generate ma non valide', {
-        thesisId: thesis.id,
-        task: 'thesis_final_sections',
-        scope: 'final_conclusions_invalid',
-        issues: generated.validation.issues,
-        conclusionsValid: generated.validation.conclusionsValid,
-        bibliographyValid: generated.validation.bibliographyValid
+    for (const definition of FINAL_SECTION_DEFINITIONS) {
+      logStatus('Generazione fase finale in corso', 'busy', 'Generazione ' + definition.title + '...');
+      const promptText = promptFinalSingleSection(thesis, definition.key, definition.title);
+      const input = buildStructuredTaskInput(thesis, 'thesis_final_sections', promptText, {
+        chapterIndex: 0,
+        finalPhase: true,
+        finalSectionKey: definition.key,
+        finalSectionTitle: definition.title,
+        mode: 'generate_final_single_section'
       });
-      await finishOperation('Conclusioni non valide', 'error', detail);
-      showToast(detail, true);
-      return;
-    }
 
-    if (!generated.validation.complete) {
-      thesis.finalSections = generated.finalSections || previousSections;
-      thesis.finalApparatus = generated.finalApparatus || serializeFinalSections(thesis.finalSections);
-      const partialMessage = 'Conclusioni salvate. Bibliografia/riferimenti bibliografici ancora da completare prima della finalizzazione.';
+      const result = await callTaskApi('thesis_final_sections', input, state.settings, { timeoutMs: getTaskTimeout('thesis_final_sections') });
+      const raw = String(result.text || '').trim();
+      if (!raw) {
+        throw new Error(definition.title + ': il provider non ha restituito testo.');
+      }
+
+      const parsed = parseFinalSectionsText(raw, createEmptyFinalSections());
+      const cleaned = cleanParsedFinalSectionValue(definition.key, parsed[definition.key] || raw);
+
+      if (!cleaned) {
+        throw new Error(definition.title + ': sezione assente, vuota o non utilizzabile.');
+      }
+
+      thesis.finalSections[definition.key] = cleaned;
+      thesis.finalApparatus = serializeFinalSections(thesis.finalSections);
       thesis.updatedAt = new Date().toISOString();
       await persistState('saved');
+      writeFinalSectionFieldsToDom(thesis.finalSections);
       renderWorkspace();
       renderThesisList();
-      appendEvent('generation_partial', 'Conclusioni salvate con apparato finale incompleto', {
-        thesisId: thesis.id,
-        task: 'thesis_final_sections',
-        scope: 'final_conclusions',
-        issues: generated.validation.issues,
-        conclusionsValid: generated.validation.conclusionsValid,
-        bibliographyValid: generated.validation.bibliographyValid
-      });
-      await finishOperation('Conclusioni salvate', 'success', partialMessage);
-      showToast(partialMessage, true);
-      return;
     }
 
-    thesis.finalSections = generated.finalSections || previousSections;
-    thesis.finalApparatus = generated.finalApparatus || serializeFinalSections(thesis.finalSections);
+    const validation = buildFinalSectionsValidation(thesis);
+    if (!validation.complete) {
+      throw new Error('Fase finale incompleta: ' + validation.issues.join('; '));
+    }
+
+    thesis.finalSections = validation.sections;
+    thesis.finalApparatus = serializeFinalSections(thesis.finalSections);
+    thesis.finalApprovals = createEmptyFinalApprovals();
+    thesis.updatedAt = new Date().toISOString();
+
+    await persistState('saved');
+    renderWorkspace();
+    renderThesisList();
+
+    appendEvent('generation', 'Generata fase finale della tesi in sezioni separate', {
+      thesisId: thesis.id,
+      task: 'thesis_final_sections',
+      scope: 'final_sections_sequential'
+    });
+
+    await finishOperation('Fase finale generata', 'success', 'Conclusioni, Bibliografia, Riferimenti normativi e Sitografia generati in sezioni separate. Verificare e approvare ogni blocco.');
+    showToast('Fase finale generata. Verifica e approva le sezioni.');
+  } catch (error) {
+    thesis.finalSections = previousSections;
+    thesis.finalApparatus = previousApparatus;
+    thesis.finalApprovals = previousApprovals;
     thesis.updatedAt = new Date().toISOString();
     await persistState('saved');
     renderWorkspace();
     renderThesisList();
-    appendEvent('generation', 'Generata fase finale della tesi', { thesisId: thesis.id, task: 'thesis_final_sections', scope: 'final_sections', retried });
-    await finishOperation('Conclusioni generate', 'success', 'Conclusioni finali generate e salvate nel workspace admin.');
-    showToast('Conclusioni generate.');
-  } catch (error) {
-    thesis.finalSections = previousSections;
-    thesis.finalApparatus = previousApparatus;
-    renderWorkspace();
+
     const detail = error.message || 'Errore generazione fase finale.';
-    appendEvent('generation_error', 'Errore generazione fase finale', { thesisId: thesis.id, task: 'thesis_final_sections', scope: 'final_sections', error: detail });
+    appendEvent('generation_error', 'Errore generazione fase finale', {
+      thesisId: thesis.id,
+      task: 'thesis_final_sections',
+      scope: 'final_sections_sequential',
+      error: detail
+    });
     await finishOperation('Errore generazione fase finale', 'error', detail);
     showToast(detail, true);
   }
